@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, drawGlyph, drawRuledBackground, ensureFontsLoaded, scoreTracing } from "./tracingScore";
-import { playSound } from "../audio/playSound";
+import { playCelebration, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
 import "./TracingCanvas.css";
 
@@ -26,6 +26,7 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
   const drawingRef = useRef(false);
   const hasInkRef = useRef(false);
   const [score, setScore] = useState<number | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
   const passScore = getDifficultySettings().passScore;
 
   useEffect(() => {
@@ -99,10 +100,24 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
     if (!inkCanvas || !hasInkRef.current) return;
     const result = await scoreTracing(target, inkCanvas);
     setScore(result);
-    onScored?.(result);
-    if (result >= getDifficultySettings().passScore) {
-      playSound(target, audioId);
+
+    if (result < getDifficultySettings().passScore) {
+      onScored?.(result);
+      return;
     }
+
+    // Al aprobar: primero el sonido de la letra/palabra, después la felicitación, y
+    // recién ahí se avisa al padre (onScored) — si avisáramos antes, este componente
+    // se reemplaza enseguida por el de la siguiente repetición y nunca se llega a ver
+    // el festejo. Cada llamada a la síntesis de voz cancela la anterior, así que van
+    // encadenadas con una pequeña pausa entre una y otra.
+    setCelebrating(true);
+    playSound(target, audioId);
+    window.setTimeout(() => playCelebration(), 900);
+    window.setTimeout(() => {
+      setCelebrating(false);
+      onScored?.(result);
+    }, 1900);
   }
 
   return (
@@ -119,6 +134,11 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
         />
+        {celebrating && (
+          <div className="tracing-canvas__celebration-overlay">
+            <span className="tracing-canvas__celebration-star">⭐</span>
+          </div>
+        )}
       </div>
       <div className="tracing-canvas__controls">
         <button type="button" onClick={clearInk} className="tracing-canvas__button tracing-canvas__button--secondary">
@@ -129,7 +149,14 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
         </button>
         {score !== null && (
           <span className={`tracing-canvas__score ${score >= passScore ? "tracing-canvas__score--good" : ""}`}>
-            {score >= passScore ? "¡Muy bien!" : "Probá de nuevo"} ({score}%)
+            {score >= passScore ? (
+              <>
+                <span className="tracing-canvas__celebrate">🎉</span> ¡Muy bien!
+              </>
+            ) : (
+              "Probá de nuevo"
+            )}{" "}
+            ({score}%)
           </span>
         )}
       </div>

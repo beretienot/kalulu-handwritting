@@ -59,3 +59,70 @@
 .tracing-canvas__score--good {
   color: #2a9d8f;
 }
+
+.tracing-canvas__celebrate {
+  display: inline-block;
+  animation: tracing-celebrate-pop 0.5s ease-out;
+}
+
+@keyframes tracing-celebrate-pop {
+  0% {
+    transform: scale(0.3) rotate(-15deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.3) rotate(10deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.tracing-canvas__celebration-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(42, 157, 143, 0.22);
+  border-radius: 6px;
+  pointer-events: none;
+  animation: tracing-overlay-fade 1.9s ease-out forwards;
+}
+
+.tracing-canvas__celebration-star {
+  font-size: 5rem;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25));
+  animation: tracing-star-burst 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tracing-star-burst {
+  0% {
+    transform: scale(0) rotate(-40deg);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.25) rotate(12deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes tracing-overlay-fade {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

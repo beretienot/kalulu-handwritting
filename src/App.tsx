@@ -3,37 +3,42 @@ import { letterUnits } from "./content/letterUnits";
 import { Home } from "./pages/Home";
 import { ReadingPage } from "./pages/ReadingPage";
 import { WritingPage } from "./pages/WritingPage";
+import { FullscreenButton } from "./components/FullscreenButton";
 
 type View = { screen: "home" } | { screen: "lectura" | "escritura"; unitId: string };
 
 function App() {
   const [view, setView] = useState<View>({ screen: "home" });
 
+  let screen;
   if (view.screen === "lectura") {
     const unit = letterUnits.find((u) => u.id === view.unitId);
-    if (!unit) return null;
-    return (
+    screen = unit ? (
       <ReadingPage
         unit={unit}
         onBack={() => setView({ screen: "home" })}
         onContinue={() => setView({ screen: "escritura", unitId: unit.id })}
       />
-    );
-  }
-
-  if (view.screen === "escritura") {
+    ) : null;
+  } else if (view.screen === "escritura") {
     const unit = letterUnits.find((u) => u.id === view.unitId);
-    if (!unit) return null;
-    return (
+    screen = unit ? (
       <WritingPage
         unit={unit}
         onBack={() => setView({ screen: "lectura", unitId: unit.id })}
         onFinish={() => setView({ screen: "home" })}
       />
-    );
+    ) : null;
+  } else {
+    screen = <Home onSelectUnit={(unitId) => setView({ screen: "lectura", unitId })} />;
   }
 
-  return <Home onSelectUnit={(unitId) => setView({ screen: "lectura", unitId })} />;
+  return (
+    <>
+      {screen}
+      <FullscreenButton />
+    </>
+  );
 }
 
 export default App;

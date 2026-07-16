@@ -70,6 +70,14 @@ export async function playSound(text: string, audioId?: string): Promise<void> {
   speakWithSynthesis(text);
 }
 
+const CELEBRATION_PHRASES = ["¡Muy bien!", "¡Excelente!", "¡Genial!", "¡Perfecto!", "¡Así se hace!", "¡Bravo!"];
+
+/** Felicita al alumno en voz alta con una frase al azar (ej. al aprobar un trazo). */
+export function playCelebration(): void {
+  const phrase = CELEBRATION_PHRASES[Math.floor(Math.random() * CELEBRATION_PHRASES.length)];
+  speakWithSynthesis(phrase);
+}
+
 // No tenemos datos reales de alineación fonema-audio (ni de los archivos grabados ni
 // de la síntesis de voz), así que aproximamos el resaltado avanzando fonema por fonema
 // (no letra por letra: los dígrafos como "ch", "ll", "rr" cuentan como uno solo) a un
