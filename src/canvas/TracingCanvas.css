@@ -1,0 +1,61 @@
+.tracing-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.tracing-canvas__stack {
+  position: relative;
+  width: 100%;
+  background: rgba(69, 123, 157, 0.07);
+  border-radius: 6px;
+  touch-action: none;
+}
+
+.tracing-canvas__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tracing-canvas__ink {
+  cursor: crosshair;
+}
+
+.tracing-canvas__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.tracing-canvas__button {
+  font-size: 1.1rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  border: none;
+  background: #457b9d;
+  color: #fff;
+  cursor: pointer;
+}
+
+.tracing-canvas__button--secondary {
+  background: #e5e9f2;
+  color: #33415c;
+}
+
+.tracing-canvas__score {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #e63946;
+}
+
+.tracing-canvas__score--good {
+  color: #2a9d8f;
+}

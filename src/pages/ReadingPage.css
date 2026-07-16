@@ -1,0 +1,124 @@
+.reading-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.reading-page__back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #457b9d;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.reading-page__hint {
+  color: #457b9d;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.reading-page__title {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.reading-page__glyph {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #1d3557;
+  background: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 0.3rem 0.9rem;
+  box-shadow: 0 4px 10px rgba(29, 53, 87, 0.12);
+  cursor: pointer;
+}
+
+.reading-page__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.reading-page__row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.4rem;
+}
+
+.reading-page__cell {
+  font-size: 1.3rem;
+  padding: 0.5rem 0.2rem;
+  border-radius: 10px;
+  border: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.reading-page__section {
+  width: 100%;
+}
+
+.reading-page__section h2 {
+  color: #457b9d;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.reading-page__words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reading-page__word {
+  font-size: 1.2rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: none;
+  background: #a8dadc;
+  color: #1d3557;
+  cursor: pointer;
+}
+
+.reading-page__sentences {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reading-page__sentence {
+  font-size: 1.2rem;
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  border: none;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reading-page__glyph.reading-page__item--pressed,
+.reading-page__cell.reading-page__item--pressed,
+.reading-page__word.reading-page__item--pressed,
+.reading-page__sentence.reading-page__item--pressed {
+  background: #2a9d8f;
+  color: #fff;
+}
+
+.reading-page__continue {
+  font-size: 1.2rem;
+  padding: 0.8rem 1.6rem;
+  border-radius: 999px;
+  border: none;
+  background: #e63946;
+  color: #fff;
+  cursor: pointer;
+  margin-top: 1rem;
+}

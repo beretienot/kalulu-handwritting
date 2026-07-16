@@ -1,0 +1,9 @@
+.highlighted-text__char {
+  transition: background 0.1s ease, color 0.1s ease;
+  border-radius: 4px;
+}
+
+.highlighted-text__char--active {
+  background: #ffe08a;
+  color: #1d3557;
+}
