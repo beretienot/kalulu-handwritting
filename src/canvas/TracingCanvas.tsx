@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, drawGlyph, drawRuledBackground, ensureFontsLoaded, scoreTracing } from "./tracingScore";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, drawGlyph, drawRuledBackground, ensureFontsLoaded } from "./tracingScore";
+import { cloudDistanceScore, prepareCloud, type Point, type Stroke } from "./pointCloudRecognizer";
+import { buildTextTemplate } from "./textTemplate";
 import { playCelebration, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
 import "./TracingCanvas.css";
@@ -12,7 +14,7 @@ interface TracingCanvasProps {
   onScored?: (score: number) => void;
 }
 
-function pointFromEvent(canvas: HTMLCanvasElement, e: React.PointerEvent<HTMLCanvasElement>) {
+function pointFromEvent(canvas: HTMLCanvasElement, e: React.PointerEvent<HTMLCanvasElement>): Point {
   const rect = canvas.getBoundingClientRect();
   return {
     x: ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH,
@@ -25,6 +27,10 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
   const inkRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const hasInkRef = useRef(false);
+  // Puntos crudos del trazo (no solo los píxeles dibujados): $P compara la forma como
+  // una nube de puntos, invariante a escala y posición.
+  const strokesRef = useRef<Stroke[]>([]);
+  const currentStrokeRef = useRef<Stroke>([]);
   const [score, setScore] = useState<number | null>(null);
   const [celebrating, setCelebrating] = useState(false);
   const passScore = getDifficultySettings().passScore;
@@ -56,6 +62,8 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
     if (!inkCanvas) return;
     inkCanvas.getContext("2d")!.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     hasInkRef.current = false;
+    strokesRef.current = [];
+    currentStrokeRef.current = [];
     setScore(null);
   }
 
@@ -71,12 +79,13 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
     drawingRef.current = true;
     hasInkRef.current = true;
     const ctx = canvas.getContext("2d")!;
-    const { x, y } = pointFromEvent(canvas, e);
+    const p = pointFromEvent(canvas, e);
+    currentStrokeRef.current = [p];
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#1d3557";
     ctx.beginPath();
-    ctx.moveTo(x, y);
+    ctx.moveTo(p.x, p.y);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -84,21 +93,26 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
     const canvas = inkRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
-    const { x, y } = pointFromEvent(canvas, e);
+    const p = pointFromEvent(canvas, e);
+    currentStrokeRef.current.push(p);
     const pressure = e.pressure > 0 ? e.pressure : 0.5;
     ctx.lineWidth = 4 + pressure * 14;
-    ctx.lineTo(x, y);
+    ctx.lineTo(p.x, p.y);
     ctx.stroke();
   }
 
   function handlePointerUp() {
     drawingRef.current = false;
+    if (currentStrokeRef.current.length > 1) {
+      strokesRef.current.push(currentStrokeRef.current);
+    }
+    currentStrokeRef.current = [];
   }
 
   async function handleCheck() {
-    const inkCanvas = inkRef.current;
-    if (!inkCanvas || !hasInkRef.current) return;
-    const result = await scoreTracing(target, inkCanvas);
+    if (!hasInkRef.current || strokesRef.current.length === 0) return;
+    const template = await buildTextTemplate(target);
+    const result = cloudDistanceScore(prepareCloud(strokesRef.current), prepareCloud(template));
     setScore(result);
 
     if (result < getDifficultySettings().passScore) {

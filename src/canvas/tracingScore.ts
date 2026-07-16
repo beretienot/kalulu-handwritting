@@ -1,5 +1,3 @@
-import { getDifficultySettings } from "../lib/difficulty";
-
 export const CANVAS_WIDTH = 560;
 export const CANVAS_HEIGHT = 320;
 // Progresión pedagógica por renglón: primero calcando sobre la letra guía, después
@@ -87,64 +85,4 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, text: string, options: 
   computeFontSizeForGlyph(ctx, text, width);
   ctx.fillText(text, width / 2, RULE_BOTTOM_Y);
   ctx.globalAlpha = 1;
-}
-
-function renderTargetCanvas(text: string): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = CANVAS_WIDTH;
-  canvas.height = CANVAS_HEIGHT;
-  const ctx = canvas.getContext("2d")!;
-  drawGlyph(ctx, text);
-  return canvas;
-}
-
-function blurredAlpha(source: CanvasImageSource, blurPx: number): Uint8ClampedArray {
-  const canvas = document.createElement("canvas");
-  canvas.width = CANVAS_WIDTH;
-  canvas.height = CANVAS_HEIGHT;
-  const ctx = canvas.getContext("2d")!;
-  ctx.filter = `blur(${blurPx}px)`;
-  ctx.drawImage(source, 0, 0);
-  return ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT).data;
-}
-
-/**
- * Puntaje 0-100: qué fracción de la letra objetivo tiene tinta cerca (cobertura)
- * menos qué fracción de la tinta quedó lejos de la letra (penalización por
- * tinta perdida). "Cerca" se define por la tolerancia del nivel de dificultad
- * actual (ver lib/difficulty.ts), no exige que el trazo caiga exactamente sobre
- * el contorno de la fuente. No es reconocimiento de escritura real.
- */
-export async function scoreTracing(target: string, inkCanvas: HTMLCanvasElement): Promise<number> {
-  await ensureFontsLoaded();
-  const { tolerancePx, strayWeight } = getDifficultySettings();
-  const targetCanvas = renderTargetCanvas(target);
-  const targetAlpha = targetCanvas.getContext("2d")!.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT).data;
-  const inkAlpha = inkCanvas.getContext("2d")!.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT).data;
-  const inkNearTarget = blurredAlpha(targetCanvas, tolerancePx);
-  const targetNearInk = blurredAlpha(inkCanvas, tolerancePx);
-
-  let targetPixels = 0;
-  let coveredPixels = 0;
-  let strayPixels = 0;
-  let inkPixels = 0;
-
-  for (let i = 3; i < targetAlpha.length; i += 4) {
-    const isTarget = targetAlpha[i] > 40;
-    const isInk = inkAlpha[i] > 40;
-    if (isTarget) {
-      targetPixels++;
-      if (targetNearInk[i] > 15) coveredPixels++;
-    }
-    if (isInk) {
-      inkPixels++;
-      if (inkNearTarget[i] <= 15) strayPixels++;
-    }
-  }
-
-  if (targetPixels === 0) return 0;
-  const coverage = coveredPixels / targetPixels;
-  const strayRatio = inkPixels > 0 ? strayPixels / inkPixels : 0;
-  const score = Math.max(0, coverage - strayRatio * strayWeight);
-  return Math.round(score * 100);
 }

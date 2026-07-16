@@ -3,18 +3,14 @@ export type DifficultyLevel = "inicial" | "intermedio" | "avanzado";
 interface DifficultySettings {
   label: string;
   ageHint: string;
-  /** Tolerancia en píxeles: qué tan cerca de la letra debe caer el trazo para contar. */
-  tolerancePx: number;
-  /** Puntaje mínimo (0-100) para aprobar una repetición. */
+  /** Puntaje mínimo (0-100) de similitud de forma ($P) para aprobar una repetición. */
   passScore: number;
-  /** Cuánto penaliza la tinta que quedó lejos de la letra (0-1). */
-  strayWeight: number;
 }
 
 export const DIFFICULTY_LEVELS: Record<DifficultyLevel, DifficultySettings> = {
-  inicial: { label: "Inicial", ageHint: "3-5 años", tolerancePx: 17, passScore: 40, strayWeight: 0.35 },
-  intermedio: { label: "Intermedio", ageHint: "5-6 años", tolerancePx: 14, passScore: 58, strayWeight: 0.5 },
-  avanzado: { label: "Avanzado", ageHint: "6+ años", tolerancePx: 9, passScore: 75, strayWeight: 0.65 },
+  inicial: { label: "Inicial", ageHint: "3-5 años", passScore: 55 },
+  intermedio: { label: "Intermedio", ageHint: "5-6 años", passScore: 68 },
+  avanzado: { label: "Avanzado", ageHint: "6+ años", passScore: 78 },
 };
 
 const STORAGE_KEY = "kalulu-difficulty";
