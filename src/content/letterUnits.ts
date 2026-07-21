@@ -9,6 +9,7 @@ export const letterUnits: LetterUnit[] = [
     order: 1,
     grafemas: ["A", "a", "Á", "á"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "a",
     lectura: {
       grid: [
         ["á", "á", "a", "a", "a", "á"],
@@ -29,6 +30,7 @@ export const letterUnits: LetterUnit[] = [
     order: 2,
     grafemas: ["M", "m"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "mmm",
     lectura: {
       grid: [
         ["ma", "má", "am", "am", "ám", "ám"],
@@ -49,6 +51,7 @@ export const letterUnits: LetterUnit[] = [
     order: 3,
     grafemas: ["E", "e", "É", "é"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "e",
     lectura: {
       grid: [
         ["em", "e", "é", "me", "me", "me"],
@@ -69,6 +72,7 @@ export const letterUnits: LetterUnit[] = [
     order: 4,
     grafemas: ["O", "o", "Ó", "ó"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "o",
     lectura: {
       grid: [
         ["ó", "mó", "om", "mó", "om", "mó"],
@@ -89,6 +93,7 @@ export const letterUnits: LetterUnit[] = [
     order: 5,
     grafemas: ["S", "s"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "sa",
     lectura: {
       grid: [
         ["es", "os", "sa", "sa", "as", "so"],
@@ -115,6 +120,7 @@ export const letterUnits: LetterUnit[] = [
     order: 6,
     grafemas: ["N", "n"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "na",
     lectura: {
       grid: [
         ["né", "on", "no", "ná", "on", "ón"],
@@ -141,6 +147,7 @@ export const letterUnits: LetterUnit[] = [
     order: 7,
     grafemas: ["P", "p"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "pa",
     lectura: {
       grid: [
         ["pó", "pa", "ep", "ep", "ap", "pé"],
@@ -167,6 +174,7 @@ export const letterUnits: LetterUnit[] = [
     order: 8,
     grafemas: ["I", "i", "Í", "í"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "i",
     lectura: {
       grid: [
         ["í", "mí", "mi", "sí", "mí", "i"],
@@ -194,6 +202,8 @@ export const letterUnits: LetterUnit[] = [
     order: 9,
     grafemas: ["Y", "y"],
     fonemaEsPlaceholder: true,
+    fonemaFallback: "ya",
+    fonemaRecordingKey: "y-i",
     lectura: {
       grid: [
         ["ey", "ey", "ey", "oy", "oy", "ey"],

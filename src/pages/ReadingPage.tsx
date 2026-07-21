@@ -32,15 +32,16 @@ export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
     playSound("Tocá cada botón para escuchar cómo suena.");
   }, [unit]);
 
-  function handlePlay(key: string, text: string, audioId?: string) {
+  function handlePlay(key: string, text: string, fallbackText?: string, recordingKey?: string) {
     stopRef.current?.();
     setPlaying({ key, index: 0 });
     setPressed((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     stopRef.current = playSoundWithHighlight(
       text,
-      audioId,
       (index) => setPlaying({ key, index }),
-      () => setPlaying(null)
+      () => setPlaying(null),
+      fallbackText,
+      recordingKey
     );
   }
 
@@ -73,7 +74,7 @@ export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
             <button
               key={i}
               className={`reading-page__glyph${pressedClass(key)}`}
-              onClick={() => handlePlay(key, g, `fonema-${unit.id}`)}
+              onClick={() => handlePlay(key, g, unit.fonemaFallback, unit.fonemaRecordingKey)}
             >
               <HighlightedText text={g} activeIndex={activeIndex(key)} />
             </button>

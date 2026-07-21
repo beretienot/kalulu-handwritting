@@ -10,13 +10,18 @@ import {
 } from "./tracingScore";
 import { shapeScore, type Point, type Stroke } from "./pointCloudRecognizer";
 import { buildTextTemplate } from "./textTemplate";
-import { playCelebration, playSound } from "../audio/playSound";
+import { playCelebration, playLetterSound, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
 import "./TracingCanvas.css";
 
 interface TracingCanvasProps {
   target: string;
-  audioId?: string;
+  /** true = `target` es una palabra (palabraFinal): se dice la palabra y después el fonema de la letra. */
+  isWord?: boolean;
+  /** Texto de respaldo (letra/sílaba aislada) para aproximar el fonema cuando no hay grabación para `target`. */
+  phonemeFallback?: string;
+  /** Nombre exacto de la grabación a usar cuando el grafema tiene más de un sonido posible (ver fonemaRecordingKey). */
+  phonemeRecordingKey?: string;
   /** false = renglón "sin calcar": no se muestra la letra guía, solo el renglón en blanco. */
   showGuide?: boolean;
   onScored?: (score: number) => void;
@@ -30,7 +35,14 @@ function pointFromEvent(canvas: HTMLCanvasElement, e: React.PointerEvent<HTMLCan
   };
 }
 
-export function TracingCanvas({ target, audioId, showGuide = true, onScored }: TracingCanvasProps) {
+export function TracingCanvas({
+  target,
+  isWord = false,
+  phonemeFallback,
+  phonemeRecordingKey,
+  showGuide = true,
+  onScored,
+}: TracingCanvasProps) {
   const guideRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
@@ -148,15 +160,21 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
     // Al aprobar: primero el sonido de la letra/palabra, después la felicitación, y
     // recién ahí se avisa al padre (onScored) — si avisáramos antes, este componente
     // se reemplaza enseguida por el de la siguiente repetición y nunca se llega a ver
-    // el festejo. Cada llamada a la síntesis de voz cancela la anterior, así que van
-    // encadenadas con una pequeña pausa entre una y otra.
+    // el festejo. Cada sonido se espera hasta que termina antes de arrancar el
+    // siguiente (en vez de un setTimeout con una duración adivinada), para que no se
+    // superpongan cuando una grabación real dura más o menos que lo estimado.
     setCelebrating(true);
-    playSound(target, audioId);
-    window.setTimeout(() => playCelebration(), 900);
-    window.setTimeout(() => {
-      setCelebrating(false);
-      onScored?.(result);
-    }, 1900);
+    if (isWord) {
+      // Secuencia para palabras: palabra → fonema de la letra → felicitación.
+      await playSound(target);
+      await playLetterSound(phonemeFallback ?? "", undefined, phonemeRecordingKey);
+    } else {
+      // Secuencia para letras: fonema de la letra (con fallback si no hay grabación) → felicitación.
+      await playLetterSound(target, phonemeFallback, phonemeRecordingKey);
+    }
+    await playCelebration();
+    setCelebrating(false);
+    onScored?.(result);
   }
 
   return (

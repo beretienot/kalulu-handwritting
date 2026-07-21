@@ -16,8 +16,18 @@ interface WritingPageProps {
 
 export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
   const items = [
-    ...unit.escritura.trazos.map((text) => ({ text, audioId: `fonema-${unit.id}` })),
-    ...unit.escritura.palabraFinal.map((text) => ({ text, audioId: undefined as string | undefined })),
+    ...unit.escritura.trazos.map((text) => ({
+      text,
+      isWord: false,
+      phonemeFallback: unit.fonemaFallback,
+      phonemeRecordingKey: unit.fonemaRecordingKey,
+    })),
+    ...unit.escritura.palabraFinal.map((text) => ({
+      text,
+      isWord: true,
+      phonemeFallback: unit.fonemaFallback,
+      phonemeRecordingKey: unit.fonemaRecordingKey,
+    })),
   ];
   // La hoja es fija: todos los renglones y repeticiones están visibles desde el
   // principio (como una página impresa), solo se van marcando como completados.
@@ -85,7 +95,9 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
                 <TracingCanvas
                   key={j}
                   target={item.text}
-                  audioId={item.audioId}
+                  isWord={item.isWord}
+                  phonemeFallback={item.phonemeFallback}
+                  phonemeRecordingKey={item.phonemeRecordingKey}
                   showGuide={j < REQUIRED_TRACED_REPETITIONS}
                   onScored={(score) => handleScored(i, j, score)}
                 />

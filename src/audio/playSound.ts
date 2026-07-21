@@ -1,6 +1,28 @@
 import { segmentIntoPhonemes } from "./phonemes";
 
-const fileAvailability = new Map<string, boolean>();
+// Grabaciones reales de letras/sílabas/palabras. El nombre de cada archivo es el texto
+// exacto (en minúscula) que pronuncia, ej. "fonemas/sa.mp3" dice el sonido /sa/. Se
+// buscan por texto en vez de por un id para poder reutilizarlas en cualquier lugar
+// donde aparezca ese mismo texto (grafemas, grilla de lectura, palabras).
+const fonemaModules = import.meta.glob<string>("./fonemas/*.mp3", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+const fonemaUrlByText = new Map<string, string>(
+  Object.entries(fonemaModules).map(([path, url]) => [path.slice("./fonemas/".length, -".mp3".length), url])
+);
+
+function findRecording(text: string): string | undefined {
+  return fonemaUrlByText.get(text.toLowerCase());
+}
+
+// "á" -> "a", "é" -> "e", etc. Los fonemas de vocales acentuadas están grabados como
+// "á-a.mp3" (la tilde solo marca dónde cae el golpe de voz, el sonido es el mismo).
+function stripAccent(letter: string): string {
+  return letter.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
 let cachedSpanishVoice: SpeechSynthesisVoice | null = null;
 
 function pickSpanishVoice(): SpeechSynthesisVoice | null {
@@ -19,63 +41,72 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
   };
 }
 
-async function audioFileExists(url: string): Promise<boolean> {
-  if (fileAvailability.has(url)) return fileAvailability.get(url)!;
-  try {
-    const res = await fetch(url, { method: "HEAD" });
-    // El servidor (Vite en dev, o el hosting SPA en prod) puede responder 200 con el
-    // index.html para cualquier ruta inexistente en vez de un 404 real, así que un
-    // content-type que no sea de audio significa "no existe" aunque res.ok sea true.
-    const contentType = res.headers.get("content-type") ?? "";
-    const exists = res.ok && contentType.startsWith("audio");
-    fileAvailability.set(url, exists);
-    return exists;
-  } catch {
-    fileAvailability.set(url, false);
-    return false;
-  }
+// Resuelve cuando el audio termina de sonar (no cuando arranca), para poder encadenar
+// sonidos esperando el anterior en vez de adivinar su duración con un setTimeout.
+function playRecording(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const audio = new Audio(url);
+    audio.volume = 1;
+    audio.addEventListener("ended", () => resolve(true));
+    audio.addEventListener("error", () => resolve(false));
+    audio.play().catch(() => resolve(false));
+  });
 }
 
-function speakWithSynthesis(text: string) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "es-AR";
-  utterance.rate = 0.85;
-  utterance.volume = 1; // máximo permitido por la Web Speech API
-  const voice = cachedSpanishVoice ?? pickSpanishVoice();
-  if (voice) utterance.voice = voice;
-  window.speechSynthesis.speak(utterance);
+// Igual que playRecording: resuelve cuando la síntesis termina de hablar, no al iniciarla.
+function speakWithSynthesis(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      resolve();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "es-AR";
+    utterance.rate = 0.85;
+    utterance.volume = 1; // máximo permitido por la Web Speech API
+    const voice = cachedSpanishVoice ?? pickSpanishVoice();
+    if (voice) utterance.voice = voice;
+    utterance.onend = () => resolve();
+    utterance.onerror = () => resolve();
+    window.speechSynthesis.speak(utterance);
+  });
+}
+
+/** Pronuncia `text` con Web Speech API (grilla de lectura, palabras, oraciones, instrucciones). */
+export async function playSound(text: string): Promise<void> {
+  await speakWithSynthesis(text);
 }
 
 /**
- * Reproduce `text`. Si existe un archivo grabado en public/audio/{audioId}.mp3 lo usa;
- * si no, cae a Web Speech API. Para fonemas aislados la síntesis dice el NOMBRE de la
- * letra (ej. "eme"), no el sonido /m/ — ver fonemaEsPlaceholder en los datos de contenido.
+ * Sonido de una letra aislada: busca primero `recordingKey` (para grafemas con más de
+ * un sonido posible grabado, ej. "y-i" en vez de "y-L" — ver fonemaRecordingKey en el
+ * contenido), después una grabación real para `text` (el grafema, ej. "a.mp3"), después
+ * la variante "letra-letra" sin acento (ej. "m-m.mp3", o "á-a.mp3" para la tilde, como
+ * están grabados los fonemas que no se pueden aislar en un solo archivo corto), después
+ * para `fallbackText` (si vino), y si ninguna existe cae a Web Speech API. La síntesis
+ * de fonemas aislados dice el NOMBRE de la letra (ej. "eme"), no el sonido /m/, por eso
+ * habla `fallbackText` en vez de `text` como último recurso: `fallbackText` debe ser
+ * una aproximación pronunciable del sonido (ver fonemaFallback en el contenido).
+ * Devuelve una promesa que resuelve cuando el sonido termina de reproducirse.
  */
-export async function playSound(text: string, audioId?: string): Promise<void> {
-  if (audioId) {
-    const url = `/audio/${audioId}.mp3`;
-    if (await audioFileExists(url)) {
-      try {
-        const audio = new Audio(url);
-        audio.volume = 1;
-        await audio.play();
-        return;
-      } catch {
-        // Cae a la síntesis de voz si el archivo real falla al reproducirse.
-      }
-    }
-  }
-  speakWithSynthesis(text);
+export async function playLetterSound(text: string, fallbackText?: string, recordingKey?: string): Promise<void> {
+  const letter = text.toLowerCase();
+  const recordingUrl =
+    (recordingKey ? findRecording(recordingKey) : undefined) ??
+    findRecording(letter) ??
+    findRecording(`${letter}-${stripAccent(letter)}`) ??
+    (fallbackText ? findRecording(fallbackText) : undefined);
+  if (recordingUrl && (await playRecording(recordingUrl))) return;
+  await speakWithSynthesis(fallbackText ?? text);
 }
 
 const CELEBRATION_PHRASES = ["¡Muy bien!", "¡Excelente!", "¡Genial!", "¡Perfecto!", "¡Así se hace!", "¡Bravo!"];
 
 /** Felicita al alumno en voz alta con una frase al azar (ej. al aprobar un trazo). */
-export function playCelebration(): void {
+export async function playCelebration(): Promise<void> {
   const phrase = CELEBRATION_PHRASES[Math.floor(Math.random() * CELEBRATION_PHRASES.length)];
-  speakWithSynthesis(phrase);
+  await speakWithSynthesis(phrase);
 }
 
 // No tenemos datos reales de alineación fonema-audio (ni de los archivos grabados ni
@@ -85,18 +116,21 @@ export function playCelebration(): void {
 const HIGHLIGHT_MS_PER_PHONEME = 220;
 
 /**
- * Igual que playSound, pero además va llamando a `onHighlight(phonemeIndex)` con el
- * índice del fonema (ver segmentIntoPhonemes) que "se está pronunciando" en ese
- * momento, y `onEnd()` al terminar. Devuelve una función para cancelar el resaltado
- * (no corta el audio en curso).
+ * Igual que playSound (o playLetterSound si viene `fallbackText`, para el botón de
+ * letra aislada), pero además va llamando a `onHighlight(phonemeIndex)` con el índice
+ * del fonema (ver segmentIntoPhonemes) que "se está pronunciando" en ese momento, y
+ * `onEnd()` al terminar. Devuelve una función para cancelar el resaltado (no corta el
+ * audio en curso). El resaltado siempre se basa en `text` (lo que se muestra en
+ * pantalla), aunque la síntesis hable `fallbackText` en su lugar.
  */
 export function playSoundWithHighlight(
   text: string,
-  audioId: string | undefined,
   onHighlight: (phonemeIndex: number) => void,
-  onEnd: () => void
+  onEnd: () => void,
+  fallbackText?: string,
+  recordingKey?: string
 ): () => void {
-  playSound(text, audioId).catch(() => {});
+  (fallbackText !== undefined ? playLetterSound(text, fallbackText, recordingKey) : playSound(text)).catch(() => {});
 
   const phonemeCount = segmentIntoPhonemes(text).length;
   let index = 0;
