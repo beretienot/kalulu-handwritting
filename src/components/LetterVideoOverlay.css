@@ -1,0 +1,34 @@
+.letter-video-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(29, 53, 87, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Por encima de .fullscreen-button (z-index: 1000, misma esquina): si no, el botón
+     de pantalla completa queda pintado arriba y tapa el cierre del video. */
+  z-index: 1100;
+}
+
+.letter-video-overlay__video {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  background: #000;
+}
+
+.letter-video-overlay__close {
+  position: absolute;
+  /* Arriba a la izquierda: arriba a la derecha choca con .fullscreen-button. */
+  top: 1.25rem;
+  left: 1.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #1d3557;
+  font-size: 1.2rem;
+  cursor: pointer;
+}

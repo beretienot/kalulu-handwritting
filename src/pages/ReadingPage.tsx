@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LetterUnit } from "../content/types";
 import { playSound, playSoundWithHighlight } from "../audio/playSound";
+import { findLetterVideoUrl } from "../video/findLetterVideo";
 import { HighlightedText } from "../components/HighlightedText";
+import { LetterVideoOverlay } from "../components/LetterVideoOverlay";
 import { markCompleted } from "../lib/progress";
 import "./ReadingPage.css";
 
@@ -14,6 +16,7 @@ interface ReadingPageProps {
 export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
   const [playing, setPlaying] = useState<{ key: string; index: number } | null>(null);
   const [pressed, setPressed] = useState<Set<string>>(new Set());
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stopRef.current?.(), []);
@@ -45,6 +48,19 @@ export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
     );
   }
 
+  // Los botones de letra sola muestran el video de src/video en vez del audio (el resto
+  // de la lectura — grilla, palabras, oraciones — sigue usando solo audio). Si todavía
+  // no hay video para esa letra, cae al comportamiento anterior (sonido del fonema).
+  function handlePlayGrafema(key: string, letter: string) {
+    const url = findLetterVideoUrl(letter, unit.fonemaRecordingKey);
+    if (!url) {
+      handlePlay(key, letter, unit.fonemaFallback, unit.fonemaRecordingKey);
+      return;
+    }
+    setPressed((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    setVideoUrl(url);
+  }
+
   function activeIndex(key: string): number | null {
     return playing?.key === key ? playing.index : null;
   }
@@ -74,7 +90,7 @@ export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
             <button
               key={i}
               className={`reading-page__glyph${pressedClass(key)}`}
-              onClick={() => handlePlay(key, g, unit.fonemaFallback, unit.fonemaRecordingKey)}
+              onClick={() => handlePlayGrafema(key, g)}
             >
               <HighlightedText text={g} activeIndex={activeIndex(key)} />
             </button>
@@ -136,6 +152,8 @@ export function ReadingPage({ unit, onBack, onContinue }: ReadingPageProps) {
       <button className="reading-page__continue" onClick={handleContinue}>
         Continuar a escritura ✏️
       </button>
+
+      {videoUrl && <LetterVideoOverlay videoUrl={videoUrl} onClose={() => setVideoUrl(null)} />}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { segmentIntoPhonemes } from "./phonemes";
+import { letterFonemaKeys } from "./fonemaKey";
 
 // Grabaciones reales de letras/sílabas/palabras. El nombre de cada archivo es el texto
 // exacto (en minúscula) que pronuncia, ej. "fonemas/sa.mp3" dice el sonido /sa/. Se
@@ -15,12 +16,6 @@ const fonemaUrlByText = new Map<string, string>(
 
 function findRecording(text: string): string | undefined {
   return fonemaUrlByText.get(text.toLowerCase());
-}
-
-// "á" -> "a", "é" -> "e", etc. Los fonemas de vocales acentuadas están grabados como
-// "á-a.mp3" (la tilde solo marca dónde cae el golpe de voz, el sonido es el mismo).
-function stripAccent(letter: string): string {
-  return letter.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
 let cachedSpanishVoice: SpeechSynthesisVoice | null = null;
@@ -91,12 +86,10 @@ export async function playSound(text: string): Promise<void> {
  * Devuelve una promesa que resuelve cuando el sonido termina de reproducirse.
  */
 export async function playLetterSound(text: string, fallbackText?: string, recordingKey?: string): Promise<void> {
-  const letter = text.toLowerCase();
   const recordingUrl =
-    (recordingKey ? findRecording(recordingKey) : undefined) ??
-    findRecording(letter) ??
-    findRecording(`${letter}-${stripAccent(letter)}`) ??
-    (fallbackText ? findRecording(fallbackText) : undefined);
+    letterFonemaKeys(text, recordingKey)
+      .map(findRecording)
+      .find((url) => url !== undefined) ?? (fallbackText ? findRecording(fallbackText) : undefined);
   if (recordingUrl && (await playRecording(recordingUrl))) return;
   await speakWithSynthesis(fallbackText ?? text);
 }

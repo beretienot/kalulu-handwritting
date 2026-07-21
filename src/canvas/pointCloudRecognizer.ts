@@ -42,17 +42,17 @@ const MAX_EXPECTED_DISTANCE = 13;
 const STROKE_COVERAGE_TOLERANCE = 12;
 const STROKE_COVERAGE_TARGET = 0.5;
 
-function distance(a: Point, b: Point): number {
+export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function pathLength(points: Point[]): number {
+export function pathLength(points: Point[]): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) total += distance(points[i - 1], points[i]);
   return total;
 }
 
-function resampleStroke(points: Point[], count: number): Point[] {
+export function resampleStroke(points: Point[], count: number): Point[] {
   if (points.length === 0) return [];
   if (points.length === 1 || count <= 1) return new Array(Math.max(1, count)).fill(points[0]);
   const total = pathLength(points);
