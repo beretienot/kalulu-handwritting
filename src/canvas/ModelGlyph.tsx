@@ -1,5 +1,13 @@
 import { useEffect, useRef } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, drawGlyph, drawRuledBackground, ensureFontsLoaded } from "./tracingScore";
+import {
+  CANVAS_HEIGHT,
+  CANVAS_HEIGHT_MM,
+  CANVAS_WIDTH,
+  CANVAS_WIDTH_MM,
+  drawGlyph,
+  drawRuledBackground,
+  ensureFontsLoaded,
+} from "./tracingScore";
 import "./ModelGlyph.css";
 
 interface ModelGlyphProps {
@@ -29,5 +37,13 @@ export function ModelGlyph({ text, alpha = 1 }: ModelGlyphProps) {
     };
   }, [text, alpha]);
 
-  return <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="model-glyph" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      width={CANVAS_WIDTH}
+      height={CANVAS_HEIGHT}
+      className="model-glyph"
+      style={{ width: `${CANVAS_WIDTH_MM}mm`, height: `${CANVAS_HEIGHT_MM}mm` }}
+    />
+  );
 }

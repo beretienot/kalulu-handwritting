@@ -25,13 +25,16 @@
 
 .writing-page__sheet {
   width: 100%;
-  background: #fff;
+  /* Un fondo de renglones aparte (CSS) nunca queda alineado en píxeles con las líneas
+     que dibuja cada canvas (varían de alto según el ancho responsivo de cada celda),
+     así que los renglones "reales" son solo los que dibuja cada letra/recuadro. */
+  background-color: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(29, 53, 87, 0.15);
   padding: 1.5rem 1.25rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 .writing-row {
@@ -43,9 +46,7 @@
 
 .writing-row__done {
   position: relative;
-  flex: 1 1 220px;
-  min-width: 180px;
-  max-width: 320px;
+  flex: 0 0 auto;
 }
 
 .writing-row__check {

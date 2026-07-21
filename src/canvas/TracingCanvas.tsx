@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, drawGlyph, drawRuledBackground, ensureFontsLoaded } from "./tracingScore";
-import { cloudDistanceScore, prepareCloud, type Point, type Stroke } from "./pointCloudRecognizer";
+import {
+  CANVAS_HEIGHT,
+  CANVAS_HEIGHT_MM,
+  CANVAS_WIDTH,
+  CANVAS_WIDTH_MM,
+  drawGlyph,
+  drawRuledBackground,
+  ensureFontsLoaded,
+} from "./tracingScore";
+import { shapeScore, type Point, type Stroke } from "./pointCloudRecognizer";
 import { buildTextTemplate } from "./textTemplate";
 import { playCelebration, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
@@ -59,8 +67,7 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
 
   function clearInk() {
     const inkCanvas = inkRef.current;
-    if (!inkCanvas) return;
-    inkCanvas.getContext("2d")!.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (inkCanvas) inkCanvas.getContext("2d")!.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     hasInkRef.current = false;
     strokesRef.current = [];
     currentStrokeRef.current = [];
@@ -77,7 +84,6 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
       // sigue funcionando igual mientras el puntero no salga del canvas.
     }
     drawingRef.current = true;
-    hasInkRef.current = true;
     const ctx = canvas.getContext("2d")!;
     const p = pointFromEvent(canvas, e);
     currentStrokeRef.current = [p];
@@ -102,17 +108,36 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
   }
 
   function handlePointerUp() {
+    if (!drawingRef.current) return;
     drawingRef.current = false;
-    if (currentStrokeRef.current.length > 1) {
-      strokesRef.current.push(currentStrokeRef.current);
-    }
+    const stroke = currentStrokeRef.current;
     currentStrokeRef.current = [];
+    if (stroke.length === 0) return;
+
+    // Un toque sin arrastre (el puntito de la "i"/"í") no dispara pointermove, así
+    // que no queda tinta dibujada ni trazo registrado si no se maneja aparte.
+    if (stroke.length === 1) {
+      const canvas = inkRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext("2d")!;
+        ctx.beginPath();
+        ctx.arc(stroke[0].x, stroke[0].y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#1d3557";
+        ctx.fill();
+      }
+      strokesRef.current.push(stroke);
+      hasInkRef.current = true;
+      return;
+    }
+
+    strokesRef.current.push(stroke);
+    hasInkRef.current = true;
   }
 
   async function handleCheck() {
     if (!hasInkRef.current || strokesRef.current.length === 0) return;
     const template = await buildTextTemplate(target);
-    const result = cloudDistanceScore(prepareCloud(strokesRef.current), prepareCloud(template));
+    const result = shapeScore(strokesRef.current, template);
     setScore(result);
 
     if (result < getDifficultySettings().passScore) {
@@ -136,7 +161,7 @@ export function TracingCanvas({ target, audioId, showGuide = true, onScored }: T
 
   return (
     <div className="tracing-canvas">
-      <div className="tracing-canvas__stack" style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}>
+      <div className="tracing-canvas__stack" style={{ width: `${CANVAS_WIDTH_MM}mm`, height: `${CANVAS_HEIGHT_MM}mm` }}>
         <canvas ref={guideRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="tracing-canvas__layer" />
         <canvas
           ref={inkRef}

@@ -3,6 +3,12 @@
 // ni la cantidad de trazos, normalizando traslación y escala antes de comparar. A
 // diferencia de la superposición de píxeles contra la fuente, no castiga que la letra
 // haya quedado más grande/chica o corrida dentro del renglón — evalúa la forma en sí.
+//
+// $P solo no alcanza: como compara el promedio de toda la nube de puntos, a un trazo
+// corto pero distintivo (el travesaño de la "A", el puntito de la "i") le puede faltar
+// entero y el puntaje global apenas baja. Por eso se suma una verificación aparte: cada
+// trazo de la plantilla tiene que tener tinta cerca en algún lado, o el puntaje se
+// castiga fuerte sin importar qué tan bien haya salido el resto.
 
 export interface Point {
   x: number;
@@ -12,6 +18,10 @@ export interface Point {
 /** Un trazo es una lista de puntos dibujados sin levantar el lápiz. */
 export type Stroke = Point[];
 
+interface TaggedPoint extends Point {
+  strokeIndex: number;
+}
+
 const RESAMPLE_POINTS = 32;
 const SQUARE_SIZE = 100;
 // Calibrado empíricamente (no es la mitad de la diagonal del cuadrado): con nubes de
@@ -19,7 +29,18 @@ const SQUARE_SIZE = 100;
 // encuentran vecinos "cercanos" en el matching greedy, así que la distancia cruda
 // nunca se acerca a la diagonal completa. Este valor separa bien trazos parecidos
 // (distancia ~0-2) de formas incompletas (~4-5) y garabatos sin relación (~8-10).
-const MAX_EXPECTED_DISTANCE = 10;
+// Subido de 10 a 13: la escritura manual real tiene más variación que trazos perfectos,
+// y el umbral original era demasiado estricto para letras bien dibujadas.
+const MAX_EXPECTED_DISTANCE = 13;
+
+// Para la cobertura por trazo: qué tan cerca (en el mismo espacio normalizado de
+// SQUARE_SIZE=100) debe caer un punto de tinta para contar como "cerca" de un punto
+// de la plantilla, y qué fracción de los puntos de UN trazo necesitan tener tinta
+// cerca para no considerarlo "faltante".
+// Tolerancia subida de 8 a 12; target bajado de 0.6 a 0.5 para ser más tolerante
+// con escritura natural que no coincide exactamente con la plantilla esquemática.
+const STROKE_COVERAGE_TOLERANCE = 12;
+const STROKE_COVERAGE_TARGET = 0.5;
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -61,12 +82,12 @@ function resampleStroke(points: Point[], count: number): Point[] {
 }
 
 /**
- * Reparte `total` puntos entre los trazos preservando cada uno. Mitad del presupuesto
- * se reparte por igual entre trazos (para que uno corto pero distintivo, como el
- * travesaño de la "A" o el puntito de la "i", no quede casi sin representación) y la
- * otra mitad proporcional a su longitud real.
+ * Reparte `total` puntos entre los trazos preservando cada uno, con el índice de
+ * trazo de origen. Mitad del presupuesto se reparte por igual entre trazos (para que
+ * uno corto pero distintivo, como el travesaño de la "A" o el puntito de la "i", no
+ * quede casi sin representación) y la otra mitad proporcional a su longitud real.
  */
-function resamplePointCloud(strokes: Stroke[], total: number): Point[] {
+function resamplePointCloud(strokes: Stroke[], total: number): TaggedPoint[] {
   const nonEmpty = strokes.filter((s) => s.length > 0);
   if (nonEmpty.length === 0) return [];
   const n = nonEmpty.length;
@@ -96,8 +117,10 @@ function resamplePointCloud(strokes: Stroke[], total: number): Point[] {
     if (i > total * 4) break; // salvaguarda contra loops infinitos en casos degenerados
   }
 
-  const result: Point[] = [];
-  nonEmpty.forEach((s, idx) => result.push(...resampleStroke(s, counts[idx])));
+  const result: TaggedPoint[] = [];
+  nonEmpty.forEach((s, idx) => {
+    resampleStroke(s, counts[idx]).forEach((p) => result.push({ ...p, strokeIndex: idx }));
+  });
   return result;
 }
 
@@ -115,18 +138,26 @@ function boundingBox(points: Point[]) {
   return { minX, maxX, minY, maxY };
 }
 
-/** Escala (sin preservar proporción) al cuadrado [0,SQUARE_SIZE] y centra en el origen. */
-function normalize(points: Point[]): Point[] {
+/**
+ * Escala PRESERVANDO la proporción (el lado más largo llega a SQUARE_SIZE) y centra
+ * en el origen. Escalar cada eje por separado (como hace $P "de libro") rompe letras
+ * casi rectas como la "I": su ancho real es casi cero, así que cualquier temblor
+ * mínimo de la mano se estira hasta ocupar todo el ancho normalizado y la deforma por
+ * completo. Con escala uniforme ese temblor sigue siendo minúsculo después de normalizar.
+ */
+function normalize<T extends Point>(points: T[]): T[] {
   const box = boundingBox(points);
-  const width = box.maxX - box.minX || 1e-9;
-  const height = box.maxY - box.minY || 1e-9;
+  const width = box.maxX - box.minX;
+  const height = box.maxY - box.minY;
+  const span = Math.max(width, height) || 1e-9;
   const scaled = points.map((p) => ({
-    x: ((p.x - box.minX) / width) * SQUARE_SIZE,
-    y: ((p.y - box.minY) / height) * SQUARE_SIZE,
+    ...p,
+    x: ((p.x - box.minX) / span) * SQUARE_SIZE,
+    y: ((p.y - box.minY) / span) * SQUARE_SIZE,
   }));
   const cx = scaled.reduce((s, p) => s + p.x, 0) / scaled.length;
   const cy = scaled.reduce((s, p) => s + p.y, 0) / scaled.length;
-  return scaled.map((p) => ({ x: p.x - cx, y: p.y - cy }));
+  return scaled.map((p) => ({ ...p, x: p.x - cx, y: p.y - cy }));
 }
 
 /** Nube de puntos ya remuestreada y normalizada, lista para comparar con `cloudDistanceScore`. */
@@ -157,7 +188,7 @@ function cloudDistance(pts1: Point[], pts2: Point[], start: number): number {
     i = (i + 1) % n;
   } while (i !== start);
   // Promedio ponderado por punto: sin esto `sum` crece con n y deja de ser comparable
-  // con HALF_DIAGONAL (que es una distancia, no una suma de ~n/2 distancias).
+  // con MAX_EXPECTED_DISTANCE (que es una distancia, no una suma de ~n/2 distancias).
   return sum / n;
 }
 
@@ -184,4 +215,53 @@ export function cloudDistanceScore(candidate: Point[], template: Point[]): numbe
   const d = greedyCloudMatch(candidate, template);
   const score = 1 - d / MAX_EXPECTED_DISTANCE;
   return Math.round(Math.max(0, Math.min(1, score)) * 100);
+}
+
+/**
+ * De 0 a 1: qué tan cubierto está el trazo peor cubierto de la plantilla (el que
+ * tiene menos tinta cerca en el candidato). 1 = todos los trazos tienen tinta cerca
+ * en todo su recorrido; 0 = algún trazo entero no tiene ninguna tinta cerca (falta
+ * por completo), sin importar qué tan bien haya salido el resto de la letra.
+ */
+function minStrokeCoverage(candidate: Point[], template: TaggedPoint[]): number {
+  const strokeCount = Math.max(0, ...template.map((p) => p.strokeIndex)) + 1;
+  let worst = 1;
+  for (let s = 0; s < strokeCount; s++) {
+    const strokePoints = template.filter((p) => p.strokeIndex === s);
+    if (strokePoints.length === 0) continue;
+    const covered = strokePoints.filter((tp) => candidate.some((cp) => distance(tp, cp) <= STROKE_COVERAGE_TOLERANCE)).length;
+    const coverage = covered / strokePoints.length;
+    if (coverage < worst) worst = coverage;
+  }
+  return worst;
+}
+
+/**
+ * Puntaje 0-100 final: similitud de forma ($P) penalizada si a algún trazo de la
+ * plantilla le falta tinta cerca (letra incompleta), aunque el resto haya salido bien.
+ */
+export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]): number {
+  const candidate = prepareCloud(candidateStrokes);
+  const templateTagged = normalize(resamplePointCloud(templateStrokes, RESAMPLE_POINTS));
+  const template = templateTagged.map(({ x, y }) => ({ x, y }));
+
+  const base = cloudDistanceScore(candidate, template);
+  const coverage = minStrokeCoverage(candidate, templateTagged);
+  const coveragePenalty = Math.min(1, coverage / STROKE_COVERAGE_TARGET);
+
+  // Respaldo estructural: cuando falta un trazo chico y aislado (el puntito de la
+  // "i", por ejemplo), el trazo que sí quedó se estira al normalizar y por pura
+  // coincidencia geométrica puede terminar "cerca" de donde iba el trazo faltante,
+  // burlando la cobertura de arriba. Contar los trazos (levantar el lápiz) es una
+  // señal más tosca pero más confiable de "faltó algo completo".
+  // El piso se sube de 0.35 a 0.5: penalizar menos a quien dibuja bien la forma
+  // pero con menos trazos que la plantilla (ej: "A" de un solo trazo continuo).
+  const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateStrokes.length);
+  const strokeCountPenalty = Math.max(0.5, Math.min(1, strokeRatio));
+
+  console.debug(
+    `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${Math.round(base * Math.min(coveragePenalty, strokeCountPenalty))}`
+  );
+
+  return Math.round(base * Math.min(coveragePenalty, strokeCountPenalty));
 }

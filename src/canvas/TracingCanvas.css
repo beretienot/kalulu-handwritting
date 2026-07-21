@@ -3,14 +3,11 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0.5rem;
-  flex: 1 1 220px;
-  min-width: 180px;
-  max-width: 320px;
+  flex: 0 0 auto;
 }
 
 .tracing-canvas__stack {
   position: relative;
-  width: 100%;
   background: rgba(69, 123, 157, 0.07);
   border-radius: 6px;
   touch-action: none;

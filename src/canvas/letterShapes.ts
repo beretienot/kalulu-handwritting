@@ -125,3 +125,13 @@ export function getLetterShape(char: string): Stroke[] | null {
   if (base && LETTER_SHAPES[base]) return [...LETTER_SHAPES[base], ACCENT_TICK];
   return null;
 }
+
+/**
+ * Para medir la altura real de la letra base (sin la tilde) al armar la plantilla:
+ * medir "Í" da la altura CON la tilde ya incluida, así que si se usa esa altura para
+ * ubicar tanto el asta como la tildecita, el asta queda estirada de más y la tilde
+ * termina el doble de alto de lo que debería.
+ */
+export function getBaseCharForMeasurement(char: string): string {
+  return ACCENT_TO_BASE[char] ?? char;
+}

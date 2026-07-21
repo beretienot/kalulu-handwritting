@@ -14,11 +14,27 @@ export const REQUIRED_REPETITIONS = REQUIRED_TRACED_REPETITIONS + REQUIRED_FREE_
 export const RULE_TOP_Y = 75;
 export const RULE_BOTTOM_Y = RULE_TOP_Y + 172;
 
+// Medido sobre reference/Argentina-Cuadernillo-1 (1).pdf: renderizada a 300dpi
+// (pdftoppm -r 300), la separación entre líneas guía es consistentemente ~47px
+// (=3.97mm≈4mm), y cada renglón de escritura va de línea oscura a línea oscura
+// con 3 líneas celestes intermedias en el medio, es decir 4 franjas de ~4mm.
+// Este es el único número que ata el tamaño en pantalla al tamaño real en papel:
+// el canvas interno sigue usando su propia resolución de píxeles (CANVAS_WIDTH/
+// HEIGHT) para dibujar nítido, pero se muestra con `mm` de CSS (ver
+// CANVAS_WIDTH_MM/CANVAS_HEIGHT_MM) para que la separación entre líneas sea la
+// misma físicamente sin importar la densidad de píxeles del dispositivo.
+const MM_PER_BAND = 4;
+const BAND_COUNT = 4;
+const BAND_PX = (RULE_BOTTOM_Y - RULE_TOP_Y) / BAND_COUNT;
+const MM_PER_CANVAS_PX = MM_PER_BAND / BAND_PX;
+export const CANVAS_WIDTH_MM = CANVAS_WIDTH * MM_PER_CANVAS_PX;
+export const CANVAS_HEIGHT_MM = CANVAS_HEIGHT * MM_PER_CANVAS_PX;
+
 export function drawRuledBackground(ctx: CanvasRenderingContext2D): void {
   const { width, height } = ctx.canvas;
   ctx.clearRect(0, 0, width, height);
   const band = RULE_BOTTOM_Y - RULE_TOP_Y;
-  const ys = [RULE_TOP_Y, RULE_TOP_Y + band / 3, RULE_TOP_Y + (band * 2) / 3, RULE_BOTTOM_Y];
+  const ys = [0, 1, 2, 3, 4].map((i) => RULE_TOP_Y + (band * i) / BAND_COUNT);
   ys.forEach((y, i) => {
     const isBoundary = i === 0 || i === ys.length - 1;
     ctx.strokeStyle = isBoundary ? "#5c6b82" : "#bcd4ee";

@@ -19,24 +19,25 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
     ...unit.escritura.trazos.map((text) => ({ text, audioId: `fonema-${unit.id}` })),
     ...unit.escritura.palabraFinal.map((text) => ({ text, audioId: undefined as string | undefined })),
   ];
-  // Cuántas repeticiones ya aprobó cada renglón; la siguiente se agrega recién cuando la anterior pasa.
-  const [passedCounts, setPassedCounts] = useState<number[]>(() => items.map(() => 0));
+  // La hoja es fija: todos los renglones y repeticiones están visibles desde el
+  // principio (como una página impresa), solo se van marcando como completados.
+  const [passed, setPassed] = useState<boolean[][]>(() => items.map(() => Array(REQUIRED_REPETITIONS).fill(false)));
   const [celebrating, setCelebrating] = useState(false);
 
   useEffect(() => {
     playSound("Primero calcá la letra con el lápiz. Después escribila de memoria.");
   }, [unit]);
 
-  function handleScored(itemIndex: number, score: number) {
+  function handleScored(itemIndex: number, repIndex: number, score: number) {
     if (score < getDifficultySettings().passScore) return;
-    setPassedCounts((prev) => {
-      const next = [...prev];
-      next[itemIndex] = Math.min(REQUIRED_REPETITIONS, next[itemIndex] + 1);
+    setPassed((prev) => {
+      const next = prev.map((row) => [...row]);
+      next[itemIndex][repIndex] = true;
       return next;
     });
   }
 
-  const doneCount = passedCounts.reduce((a, b) => a + b, 0);
+  const doneCount = passed.reduce((sum, row) => sum + row.filter(Boolean).length, 0);
   const totalCount = items.length * REQUIRED_REPETITIONS;
   const allDone = doneCount === totalCount;
 
@@ -74,21 +75,21 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
           <div className="writing-row" key={i}>
             <ModelGlyph text={item.text} />
 
-            {Array.from({ length: passedCounts[i] }).map((_, j) => (
-              <div className="writing-row__done" key={j}>
-                <ModelGlyph text={item.text} alpha={0.4} />
-                <span className="writing-row__check">✓</span>
-              </div>
-            ))}
-
-            {passedCounts[i] < REQUIRED_REPETITIONS && (
-              <TracingCanvas
-                key={passedCounts[i]}
-                target={item.text}
-                audioId={item.audioId}
-                showGuide={passedCounts[i] < REQUIRED_TRACED_REPETITIONS}
-                onScored={(score) => handleScored(i, score)}
-              />
+            {Array.from({ length: REQUIRED_REPETITIONS }).map((_, j) =>
+              passed[i][j] ? (
+                <div className="writing-row__done" key={j}>
+                  <ModelGlyph text={item.text} alpha={0.4} />
+                  <span className="writing-row__check">✓</span>
+                </div>
+              ) : (
+                <TracingCanvas
+                  key={j}
+                  target={item.text}
+                  audioId={item.audioId}
+                  showGuide={j < REQUIRED_TRACED_REPETITIONS}
+                  onScored={(score) => handleScored(i, j, score)}
+                />
+              )
             )}
           </div>
         ))}

@@ -1,5 +1,5 @@
 import type { Stroke } from "./pointCloudRecognizer";
-import { getLetterShape } from "./letterShapes";
+import { getLetterShape, getBaseCharForMeasurement } from "./letterShapes";
 import { ensureFontsLoaded, fontString } from "./tracingScore";
 
 let measureCtx: CanvasRenderingContext2D | null = null;
@@ -35,8 +35,12 @@ export async function buildTextTemplate(text: string): Promise<Stroke[]> {
     const shape = getLetterShape(char);
     const m = ctx.measureText(char);
     const width = m.width || REFERENCE_SIZE * 0.55;
-    const ascent = m.actualBoundingBoxAscent || REFERENCE_SIZE * 0.7;
-    const descent = m.actualBoundingBoxDescent || 0;
+    // La altura se mide sobre la letra BASE (sin tilde): medir "Í" da una altura que ya
+    // incluye la tilde, y la forma (asta + tildecita, ver letterShapes.ts) espera poder
+    // agregar la tilde POR ENCIMA de la altura de la letra base, no de una que ya la tiene.
+    const metrics = ctx.measureText(getBaseCharForMeasurement(char));
+    const ascent = metrics.actualBoundingBoxAscent || REFERENCE_SIZE * 0.7;
+    const descent = metrics.actualBoundingBoxDescent || 0;
     if (shape) {
       for (const stroke of shape) {
         strokes.push(stroke.map((p) => ({ x: cursorX + p.x * width, y: mapY(p.y, ascent, descent) })));
