@@ -1,17 +1,36 @@
 // Camino a seguir para la pantalla de "orden de trazo": a diferencia de
 // pointCloudRecognizer.ts (que compara la forma final sin importar orden ni dirección),
-// acá el trazo de letterShapes.ts SÍ se recorre en el orden y dirección en que está
-// definido, punto por punto, para enseñar cómo se escribe la letra (no solo puntuar
-// cómo quedó).
+// acá el trazo SÍ se recorre en el orden y dirección en que está definido, punto por
+// punto, para enseñar cómo se escribe la letra (no solo puntuar cómo quedó). Por eso
+// usa sus propias formas (strokeOrderShapes.ts) en vez de las de letterShapes.ts (que
+// alimentan el puntaje $P de TracingCanvas): ese archivo es invariante a orden/dirección
+// y no necesariamente coincide con lo que hace falta acá.
+//
+// El ajuste de escala/posición (computePathFit) sale pura y exclusivamente de la
+// geometría de strokeOrderShapes.ts, no de ninguna tipografía: la guía que se dibuja en
+// pantalla (ver StrokeOrderPage.tsx) es ese mismo camino, así que no hay glifo ajeno con
+// el que calzar. Antes esto medía la fuente real (Mulish) y corregía el camino calcado
+// para que cayera sobre esa tinta (snapPointsToInkCenter) — se sacó porque Mulish tiene
+// proporciones bastante distintas a las de la hoja de referencia en varios puntos (d, g,
+// n), y esa corrección podía fallar y alejar el trazo de la letra que se ve en pantalla.
 
 import { type Point, distance, pathLength, resampleStroke } from "./pointCloudRecognizer";
-import { getLetterShape } from "./letterShapes";
+import { getStrokeOrderShape } from "./strokeOrderShapes";
 
 export interface ScaledStroke {
   points: Point[];
   /** cumulative[i] = distancia recorrida desde points[0] hasta points[i]. */
   cumulative: number[];
   length: number;
+}
+
+/** Cómo mapear los puntos normalizados de strokeOrderShapes.ts a píxeles de pantalla:
+ * escalado uniforme + traslación para centrar el bounding box real del trazo (ver
+ * computePathFit) en el espacio disponible. */
+export interface PathFit {
+  scale: number;
+  originX: number;
+  originY: number;
 }
 
 // Separación aproximada (en píxeles de pantalla) entre puntos remuestreados: densa
@@ -24,43 +43,70 @@ const RESAMPLE_SPACING_PX = 4;
 const FIT_MARGIN = 0.85;
 
 /**
- * Trazos de `char` (ver letterShapes.ts) escalados y centrados para ocupar como máximo
- * `availWidth` x `availHeight` píxeles de pantalla, preservando su proporción real (no
- * los estira a un cuadrado: una letra con descendente o tilde es más alta que ancha).
- * Cada trazo queda remuestreado a densidad fija con distancia acumulada por punto.
- * `null` si la letra no tiene forma definida en letterShapes.ts.
+ * Calcula el escalado + posición para que los trazos de `char` (ver
+ * strokeOrderShapes.ts) entren en `availWidth` x `availHeight` píxeles de pantalla,
+ * centrados. El bounding box sale de recorrer TODOS los puntos de TODOS los trazos —
+ * ya incluye la tilde (que sube a y negativo) y los descendentes (que bajan de y=1),
+ * sin necesidad de reservarles espacio a mano.
  */
-export function buildStrokeOrderPaths(char: string, availWidth: number, availHeight: number): ScaledStroke[] | null {
-  const shape = getLetterShape(char);
-  if (!shape) return null;
-
+export function computePathFit(char: string, availWidth: number, availHeight: number): PathFit {
+  const shape = getStrokeOrderShape(char) ?? [];
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   for (const stroke of shape) {
     for (const p of stroke) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
     }
   }
-  const shapeWidth = maxX - minX || 1;
-  const shapeHeight = maxY - minY || 1;
-  const scale = Math.min((availWidth * FIT_MARGIN) / shapeWidth, (availHeight * FIT_MARGIN) / shapeHeight);
-  const originX = availWidth / 2 - (minX + shapeWidth / 2) * scale;
-  const originY = availHeight / 2 - (minY + shapeHeight / 2) * scale;
+  if (!Number.isFinite(minX)) {
+    minX = 0;
+    maxX = 1;
+    minY = 0;
+    maxY = 1;
+  }
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const scale = Math.min((availWidth * FIT_MARGIN) / width, (availHeight * FIT_MARGIN) / height);
+
+  return {
+    scale,
+    originX: availWidth / 2 - ((minX + maxX) / 2) * scale,
+    originY: availHeight / 2 - ((minY + maxY) / 2) * scale,
+  };
+}
+
+/**
+ * Trazos de `char` (ver strokeOrderShapes.ts) mapeados a píxeles de pantalla con `fit`
+ * (ver computePathFit), remuestreados a densidad fija con distancia acumulada por
+ * punto. `null` si la letra no tiene forma definida.
+ */
+export function buildStrokeOrderPaths(char: string, fit: PathFit): ScaledStroke[] | null {
+  const shape = getStrokeOrderShape(char);
+  if (!shape) return null;
 
   return shape.map((stroke) => {
-    const scaledPoints = stroke.map((p) => ({ x: originX + p.x * scale, y: originY + p.y * scale }));
-    const points = resampleForDrawing(smoothCurve(scaledPoints));
-    const cumulative = [0];
-    for (let i = 1; i < points.length; i++) {
-      cumulative.push(cumulative[i - 1] + distance(points[i - 1], points[i]));
-    }
-    return { points, cumulative, length: cumulative[cumulative.length - 1] ?? 0 };
+    const scaledPoints = stroke.map((p) => ({
+      x: fit.originX + p.x * fit.scale,
+      y: fit.originY + p.y * fit.scale,
+    }));
+    return buildScaledStroke(resampleForDrawing(smoothCurve(scaledPoints)));
   });
+}
+
+/** Arma un ScaledStroke a partir de una lista de puntos ya en píxeles de pantalla,
+ *  calculando la distancia acumulada por punto. */
+export function buildScaledStroke(points: Point[]): ScaledStroke {
+  const cumulative = [0];
+  for (let i = 1; i < points.length; i++) {
+    cumulative.push(cumulative[i - 1] + distance(points[i - 1], points[i]));
+  }
+  return { points, cumulative, length: cumulative[cumulative.length - 1] ?? 0 };
 }
 
 function resampleForDrawing(points: Point[]): Point[] {
@@ -86,12 +132,11 @@ function catmullRomPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: number):
 }
 
 /**
- * letterShapes.ts define curvas (panza de la "a", arcos de "m"/"n"/"p", "e", "s") con
- * pocos puntos de control, pensados para puntuar forma con $P (no le importa que el
- * camino entre puntos sea recto). Acá SÍ se ve el camino, así que hace falta una curva
- * suave (Catmull-Rom) pasando por esos mismos puntos en vez de unirlos con líneas
- * rectas. Un trazo de 2 puntos es una línea recta a propósito (asta, renglón, tilde) y
- * se deja tal cual.
+ * Las curvas (panza de la "a", arcos de "m"/"n"/"p", "e", "s") están definidas con
+ * pocos puntos de control. Acá SÍ se ve el camino, así que hace falta una curva suave
+ * (Catmull-Rom) pasando por esos mismos puntos en vez de unirlos con líneas rectas. Un
+ * trazo de 2 puntos es una línea recta a propósito (asta, renglón, tilde) y se deja
+ * tal cual.
  */
 function smoothCurve(points: Point[]): Point[] {
   if (points.length <= 2) return points;

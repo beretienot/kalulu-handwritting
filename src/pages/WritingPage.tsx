@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { LetterUnit } from "../content/types";
 import { TracingCanvas } from "../canvas/TracingCanvas";
 import { ModelGlyph } from "../canvas/ModelGlyph";
+import { StrokeOrderPage } from "./StrokeOrderPage";
 import { REQUIRED_REPETITIONS, REQUIRED_TRACED_REPETITIONS } from "../canvas/tracingScore";
 import { getDifficultySettings } from "../lib/difficulty";
 import { playSound } from "../audio/playSound";
@@ -30,16 +31,36 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
     })),
   ];
   // La hoja es fija: todos los renglones y repeticiones están visibles desde el
-  // principio (como una página impresa), solo se van marcando como completados.
+  // principio (como una página impresa), pero solo el canvas que sigue en el orden de
+  // lectura (renglón por renglón, repetición por repetición) está habilitado; el
+  // resto se ve pero no se puede tocar hasta que le toque el turno.
   const [passed, setPassed] = useState<boolean[][]>(() => items.map(() => Array(REQUIRED_REPETITIONS).fill(false)));
   const [celebrating, setCelebrating] = useState(false);
+  // Si falla el reconocimiento de una letra suelta (no una palabra: ahí no hay una
+  // sola letra a la que mandar), se manda a practicar esa letra en "seguí el camino
+  // con el dedo" antes de dejarla reintentar — mantiene este componente montado (no es
+  // una navegación de App.tsx) para no perder el progreso de `passed` ya hecho.
+  const [practicingChar, setPracticingChar] = useState<string | null>(null);
+
+  const flatPassed = passed.flat();
+  const nextFlatIndex = flatPassed.findIndex((done) => !done);
+  const unlockedFlatIndex = nextFlatIndex === -1 ? flatPassed.length : nextFlatIndex;
 
   useEffect(() => {
     playSound("Primero calcá la letra con el lápiz. Después escribila de memoria.");
   }, [unit]);
 
-  function handleScored(itemIndex: number, repIndex: number, score: number) {
-    if (score < getDifficultySettings().passScore) return;
+  async function handleScored(itemIndex: number, repIndex: number, score: number) {
+    if (score < getDifficultySettings().passScore) {
+      const item = items[itemIndex];
+      // Antes de mandarla a practicar, avisa que no salió y por qué (recordarle que
+      // siga el orden de trazo aprendido) — así no es un salto de pantalla sorpresivo.
+      if (!item.isWord) {
+        await playSound("Todavía no. Recordá seguir el orden de los trazos que aprendiste.");
+        setPracticingChar(item.text);
+      }
+      return;
+    }
     setPassed((prev) => {
       const next = prev.map((row) => [...row]);
       next[itemIndex][repIndex] = true;
@@ -56,6 +77,17 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
     markCompleted(unit.id, "escritura");
     setCelebrating(true);
     playSound(`¡Muy bien! Terminaste la letra ${unit.id}.`);
+  }
+
+  if (practicingChar) {
+    return (
+      <StrokeOrderPage
+        unit={unit}
+        chars={[practicingChar]}
+        onBack={() => setPracticingChar(null)}
+        onContinue={() => setPracticingChar(null)}
+      />
+    );
   }
 
   if (celebrating) {
@@ -85,13 +117,25 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
           <div className="writing-row" key={i}>
             <ModelGlyph text={item.text} />
 
-            {Array.from({ length: REQUIRED_REPETITIONS }).map((_, j) =>
-              passed[i][j] ? (
-                <div className="writing-row__done" key={j}>
-                  <ModelGlyph text={item.text} alpha={0.4} />
-                  <span className="writing-row__check">✓</span>
-                </div>
-              ) : (
+            {Array.from({ length: REQUIRED_REPETITIONS }).map((_, j) => {
+              if (passed[i][j]) {
+                return (
+                  <div className="writing-row__done" key={j}>
+                    <ModelGlyph text={item.text} alpha={0.4} />
+                    <span className="writing-row__check">✓</span>
+                  </div>
+                );
+              }
+              const flatIndex = i * REQUIRED_REPETITIONS + j;
+              if (flatIndex > unlockedFlatIndex) {
+                return (
+                  <div className="writing-row__locked" key={j}>
+                    <ModelGlyph text={item.text} alpha={0.15} />
+                    <span className="writing-row__lock">🔒</span>
+                  </div>
+                );
+              }
+              return (
                 <TracingCanvas
                   key={j}
                   target={item.text}
@@ -101,8 +145,8 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
                   showGuide={j < REQUIRED_TRACED_REPETITIONS}
                   onScored={(score) => handleScored(i, j, score)}
                 />
-              )
-            )}
+              );
+            })}
           </div>
         ))}
       </div>

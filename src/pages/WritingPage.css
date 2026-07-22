@@ -65,6 +65,21 @@
   font-weight: 700;
 }
 
+.writing-row__locked {
+  position: relative;
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+.writing-row__lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+
 .writing-page__finish {
   font-size: 1.2rem;
   padding: 0.8rem 1.6rem;
