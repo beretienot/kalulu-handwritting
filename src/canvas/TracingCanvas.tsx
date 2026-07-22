@@ -9,7 +9,7 @@ import {
   ensureFontsLoaded,
 } from "./tracingScore";
 import { shapeScore, type Point, type Stroke } from "./pointCloudRecognizer";
-import { buildTextTemplate } from "./textTemplate";
+import { buildLetterTemplates, buildTextTemplate, scoreWordLetters } from "./textTemplate";
 import { playCelebration, playLetterSound, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
 import "./TracingCanvas.css";
@@ -148,8 +148,14 @@ export function TracingCanvas({
 
   async function handleCheck() {
     if (!hasInkRef.current || strokesRef.current.length === 0) return;
-    const template = await buildTextTemplate(target);
-    const result = shapeScore(strokesRef.current, template);
+    // Las palabras se puntúan letra por letra (ver scoreWordLetters): comparar toda la
+    // palabra como una sola nube $P deja pasar letras salteadas o cambiadas por otra
+    // parecida, porque el resto de la palabra "explica" la forma general igual y el
+    // puntaje global apenas baja. Una letra sola no tiene ese problema (no hay otras
+    // letras que la disimulen), así que sigue usando la comparación de nube entera.
+    const result = isWord
+      ? scoreWordLetters(strokesRef.current, await buildLetterTemplates(target))
+      : shapeScore(strokesRef.current, await buildTextTemplate(target));
     setScore(result);
 
     if (result < getDifficultySettings().passScore) {
