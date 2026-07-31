@@ -1,3 +1,5 @@
+import { getBaseCharForMeasurement } from "./letterShapes";
+
 export const CANVAS_WIDTH = 560;
 export const CANVAS_HEIGHT = 320;
 // Progresión pedagógica por renglón: primero calcando sobre la letra guía, después
@@ -68,20 +70,41 @@ export function ensureFontsLoaded(): Promise<void> {
   return fontsLoadedPromise;
 }
 
-function fitFontSize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, startSize: number): number {
-  let fontSize = startSize;
-  ctx.font = fontString(fontSize);
-  while (ctx.measureText(text).width > maxWidth && fontSize > 10) {
-    fontSize -= 4;
-    ctx.font = fontString(fontSize);
-  }
-  return fontSize;
+// En el cuadernillo real, no todas las letras ocupan el renglón entero: las minúsculas
+// "de cuerpo" (a, n, o...) llegan solo hasta la línea celeste del medio (mitad del
+// renglón), mientras que mayúsculas y ascendentes (b, d, f, l, t) llegan hasta la línea
+// superior. Mulish (la fuente que dibuja esta guía) NO respeta esa proporción 1:2 por su
+// cuenta: medido a 300px, su x-height es ~72% de su altura de mayúscula, no 50%. Por eso
+// hay que forzar dos tamaños de fuente distintos (uno para cada categoría) en vez de uno
+// solo — con un único tamaño calibrado a la mayúscula, las minúsculas de cuerpo quedan
+// mucho más altas de lo que el renglón indica.
+const ASCENDER_LOWER = new Set(["b", "d", "f", "l", "t"]);
+
+type HeightClass = "full" | "xheight";
+
+function isUpperChar(ch: string): boolean {
+  return ch !== ch.toLowerCase() && ch === ch.toUpperCase();
 }
 
-/** El mismo tamaño de fuente que usa drawGlyph, expuesto para posicionar las flechas de trazo. */
-export function computeFontSizeForGlyph(ctx: CanvasRenderingContext2D, text: string, canvasWidth: number): number {
-  const band = RULE_BOTTOM_Y - RULE_TOP_Y;
-  return fitFontSize(ctx, text, canvasWidth * 0.85, Math.floor(band / 0.7));
+/** A qué línea del renglón debe llegar arriba `char`: "full" = línea superior (mayúsculas
+ *  y ascendentes b/d/f/l/t), "xheight" = línea del medio (el resto de las minúsculas,
+ *  incluidas las descendentes g/j/p/q/y, que solo difieren por abajo, no por arriba). */
+function heightClassFor(char: string): HeightClass {
+  const base = getBaseCharForMeasurement(char);
+  if (isUpperChar(base) || ASCENDER_LOWER.has(base)) return "full";
+  return "xheight";
+}
+
+/** Ascenso real (fracción del tamaño de fuente) de una mayúscula y de una minúscula de
+ *  cuerpo en la fuente actual, para calcular qué tamaño de fuente hace que cada una
+ *  llegue exactamente a su línea objetivo. Se mide en vivo (no una constante fija) para
+ *  no depender de las proporciones exactas de Mulish si el font cambia. */
+function measureHeightRatios(ctx: CanvasRenderingContext2D): { full: number; xheight: number } {
+  const REFERENCE_SIZE = 300;
+  ctx.font = fontString(REFERENCE_SIZE);
+  const full = ctx.measureText("N").actualBoundingBoxAscent / REFERENCE_SIZE;
+  const xheight = ctx.measureText("n").actualBoundingBoxAscent / REFERENCE_SIZE;
+  return { full, xheight };
 }
 
 interface DrawGlyphOptions {
@@ -90,6 +113,15 @@ interface DrawGlyphOptions {
   clear?: boolean;
 }
 
+/**
+ * Dibuja `text` (una letra o una palabra corta) letra por letra en vez de con un solo
+ * fillText: cada carácter usa el tamaño de fuente de su categoría (ver heightClassFor)
+ * para que las minúsculas de cuerpo lleguen a la línea del medio y las mayúsculas/
+ * ascendentes a la línea superior, ambas con la base en RULE_BOTTOM_Y — igual que en el
+ * cuadernillo. Los descendentes (p, g, y...) y las tildes bajan/suben por su cuenta según
+ * el propio dibujo de la fuente, sin necesidad de un tercer tamaño: ese margen ya está
+ * contemplado fuera de RULE_TOP_Y/RULE_BOTTOM_Y (ver comentario más arriba).
+ */
 export function drawGlyph(ctx: CanvasRenderingContext2D, text: string, options: DrawGlyphOptions = {}): void {
   const { alpha = 1, clear = true } = options;
   const { width, height } = ctx.canvas;
@@ -98,7 +130,37 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, text: string, options: 
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#000";
   ctx.globalAlpha = alpha;
-  computeFontSizeForGlyph(ctx, text, width);
-  ctx.fillText(text, width / 2, RULE_BOTTOM_Y);
+
+  const band = RULE_BOTTOM_Y - RULE_TOP_Y;
+  const ratios = measureHeightRatios(ctx);
+  let fullSize = band / ratios.full;
+  let xheightSize = band / 2 / ratios.xheight;
+  const sizeFor = (cls: HeightClass) => (cls === "full" ? fullSize : xheightSize);
+
+  const chars = [...text];
+  const classes = chars.map(heightClassFor);
+  const widthOf = (ch: string, cls: HeightClass) => {
+    ctx.font = fontString(sizeFor(cls));
+    return ctx.measureText(ch).width;
+  };
+  let totalWidth = 0;
+  chars.forEach((ch, i) => (totalWidth += widthOf(ch, classes[i])));
+
+  const maxWidth = width * 0.85;
+  if (totalWidth > maxWidth) {
+    const shrink = maxWidth / totalWidth;
+    fullSize *= shrink;
+    xheightSize *= shrink;
+    totalWidth = maxWidth;
+  }
+
+  let cursorX = (width - totalWidth) / 2;
+  chars.forEach((ch, i) => {
+    ctx.font = fontString(sizeFor(classes[i]));
+    const w = ctx.measureText(ch).width;
+    ctx.fillText(ch, cursorX + w / 2, RULE_BOTTOM_Y);
+    cursorX += w;
+  });
+
   ctx.globalAlpha = 1;
 }
