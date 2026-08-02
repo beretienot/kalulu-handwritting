@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { LetterUnit } from "../content/types";
 import { TracingCanvas } from "../canvas/TracingCanvas";
-import { StrokeOrderPage } from "./StrokeOrderPage";
 import { REQUIRED_REPETITIONS, REQUIRED_TRACED_REPETITIONS } from "../canvas/tracingScore";
 import { getDifficultySettings } from "../lib/difficulty";
 import { playSound } from "../audio/playSound";
@@ -13,11 +12,6 @@ interface WritingPageProps {
   onBack: () => void;
   onFinish: () => void;
 }
-
-// Cuántos intentos fallidos seguidos de la misma repetición se toleran antes de mandar
-// a practicar el trazo: no interrumpe apenas falla una vez, deja un par de reintentos
-// libres primero.
-const FAILS_BEFORE_PRACTICE = 3;
 
 export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
   const items = [
@@ -40,15 +34,6 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
   // resto se ve pero no se puede tocar hasta que le toque el turno.
   const [passed, setPassed] = useState<boolean[][]>(() => items.map(() => Array(REQUIRED_REPETITIONS).fill(false)));
   const [celebrating, setCelebrating] = useState(false);
-  // Si falla el reconocimiento de una letra suelta (no una palabra: ahí no hay una
-  // sola letra a la que mandar), se manda a practicar esa letra en "seguí el camino
-  // con el dedo" antes de dejarla reintentar — mantiene este componente montado (no es
-  // una navegación de App.tsx) para no perder el progreso de `passed` ya hecho.
-  const [practicingChar, setPracticingChar] = useState<string | null>(null);
-  // Cuántas veces seguidas falló la repetición activa (se resetea al pasar o al mandar
-  // a practicar) — con estado alcanzaría, pero un ref evita depender del closure de
-  // handleScored quedando desactualizado entre llamadas seguidas.
-  const consecutiveFailsRef = useRef(0);
 
   const flatPassed = passed.flat();
   const nextFlatIndex = flatPassed.findIndex((done) => !done);
@@ -64,26 +49,8 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
     playSound("Primero calcá la letra con el lápiz. Después escribila de memoria.");
   }, [unit]);
 
-  async function handleScored(itemIndex: number, repIndex: number, score: number) {
-    if (score < getDifficultySettings().passScore) {
-      const item = items[itemIndex];
-      if (!item.isWord) {
-        consecutiveFailsRef.current += 1;
-        // Recién al tercer fallo seguido manda a practicar — antes deja reintentar
-        // libremente en el mismo canvas (la palabra ya no tiene una letra puntual a la
-        // que mandar, así que ahí siempre deja reintentar sin este límite).
-        if (consecutiveFailsRef.current >= FAILS_BEFORE_PRACTICE) {
-          consecutiveFailsRef.current = 0;
-          // Antes de mandarla a practicar, avisa que no salió y por qué (recordarle
-          // que siga el orden de trazo aprendido) — así no es un salto de pantalla
-          // sorpresivo.
-          await playSound("Todavía no. Recordá seguir el orden de los trazos que aprendiste.");
-          setPracticingChar(item.text);
-        }
-      }
-      return;
-    }
-    consecutiveFailsRef.current = 0;
+  function handleScored(itemIndex: number, repIndex: number, score: number) {
+    if (score < getDifficultySettings().passScore) return;
     setPassed((prev) => {
       const next = prev.map((row) => [...row]);
       next[itemIndex][repIndex] = true;
@@ -100,17 +67,6 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
     markCompleted(unit.id, "escritura");
     setCelebrating(true);
     playSound(`¡Muy bien! Terminaste la letra ${unit.id}.`);
-  }
-
-  if (practicingChar) {
-    return (
-      <StrokeOrderPage
-        unit={unit}
-        chars={[practicingChar]}
-        onBack={() => setPracticingChar(null)}
-        onContinue={() => setPracticingChar(null)}
-      />
-    );
   }
 
   if (celebrating) {

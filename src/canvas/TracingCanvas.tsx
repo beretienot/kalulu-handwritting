@@ -171,9 +171,12 @@ export function TracingCanvas({
     // superpongan cuando una grabación real dura más o menos que lo estimado.
     setCelebrating(true);
     if (isWord) {
-      // Secuencia para palabras: palabra → fonema de la letra → felicitación.
-      await playSound(target);
+      // Secuencia para palabras: primero el sonido de la letra sola (exagerado, ej. "mmm"
+      // — usa la grabación real si existe, ver phonemeRecordingKey), después "como en
+      // <palabra>", para que quede "mmm... como en mapa" en vez de decir la palabra y
+      // recién después, suelto, el fonema.
       await playLetterSound(phonemeFallback ?? "", undefined, phonemeRecordingKey);
+      await playSound(`como en ${target}`);
     } else {
       // Secuencia para letras: fonema de la letra (con fallback si no hay grabación) → felicitación.
       await playLetterSound(target, phonemeFallback, phonemeRecordingKey);
