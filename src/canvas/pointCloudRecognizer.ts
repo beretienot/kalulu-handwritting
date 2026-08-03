@@ -256,8 +256,18 @@ export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]
   // señal más tosca pero más confiable de "faltó algo completo".
   // El piso se sube de 0.35 a 0.5: penalizar menos a quien dibuja bien la forma
   // pero con menos trazos que la plantilla (ej: "A" de un solo trazo continuo).
+  //
+  // El caso contrario (MÁS trazos que la plantilla) también necesita penalización,
+  // no solo el de menos: una letra de varios trazos (la "E", con 4) dibujada encima
+  // de una plantilla de un solo trazo (la "S") no tenía freno acá, y como $P por sí
+  // solo no distingue bien formas distintas con extensión pareja, el puntaje base ya
+  // salía cerca de la mitad — suficiente para aprobar en el nivel inicial. El piso
+  // para exceso de trazos es más alto (0.7, no 0.5) porque un trazo de más suele ser
+  // un simple levantón de lápiz a mitad de una letra bien dibujada (ej: la "S" en dos
+  // trazos en vez de uno continuo), no necesariamente una letra distinta.
   const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateStrokes.length);
-  const strokeCountPenalty = Math.max(0.5, Math.min(1, strokeRatio));
+  const strokeCountPenalty =
+    strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : Math.max(0.7, 1 / strokeRatio);
 
   console.debug(
     `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${Math.round(base * Math.min(coveragePenalty, strokeCountPenalty))}`
