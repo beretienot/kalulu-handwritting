@@ -8,7 +8,7 @@ import {
   drawRuledBackground,
   ensureFontsLoaded,
 } from "./tracingScore";
-import { shapeScore, type Point, type Stroke } from "./pointCloudRecognizer";
+import { explainMismatch, shapeScoreDetailed, type Point, type Stroke } from "./pointCloudRecognizer";
 import { buildLetterTemplates, buildTextTemplate, scoreWordLetters } from "./textTemplate";
 import { playCelebration, playLetterSound, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
@@ -153,12 +153,23 @@ export function TracingCanvas({
     // parecida, porque el resto de la palabra "explica" la forma general igual y el
     // puntaje global apenas baja. Una letra sola no tiene ese problema (no hay otras
     // letras que la disimulen), así que sigue usando la comparación de nube entera.
-    const result = isWord
-      ? scoreWordLetters(strokesRef.current, await buildLetterTemplates(target))
-      : shapeScore(strokesRef.current, await buildTextTemplate(target));
+    // Solo la letra individual guarda el desglose (`shapeScoreDetailed`, ver
+    // `explainMismatch`): en una palabra no hay forma barata de saber CUÁL letra
+    // falló ni por qué sin repetir el trabajo de `scoreWordLetters`.
+    let result: number;
+    let mismatchExplanation: string | null = null;
+    if (isWord) {
+      result = scoreWordLetters(strokesRef.current, await buildLetterTemplates(target));
+      mismatchExplanation = "Alguna letra no salió bien, fijate en el modelo y probá de nuevo.";
+    } else {
+      const detail = shapeScoreDetailed(strokesRef.current, await buildTextTemplate(target));
+      result = detail.score;
+      mismatchExplanation = explainMismatch(detail);
+    }
     setScore(result);
 
     if (result < getDifficultySettings().passScore) {
+      await playSound(mismatchExplanation);
       onScored?.(result);
       return;
     }

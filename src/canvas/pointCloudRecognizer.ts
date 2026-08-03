@@ -236,11 +236,21 @@ function minStrokeCoverage(candidate: Point[], template: TaggedPoint[]): number 
   return worst;
 }
 
+export interface ShapeScoreDetail {
+  score: number;
+  base: number;
+  coveragePenalty: number;
+  strokeRatio: number;
+  strokeCountPenalty: number;
+}
+
 /**
  * Puntaje 0-100 final: similitud de forma ($P) penalizada si a algún trazo de la
  * plantilla le falta tinta cerca (letra incompleta), aunque el resto haya salido bien.
+ * Devuelve además el desglose (ver `ShapeScoreDetail`) para poder explicar qué anduvo
+ * mal, no solo cuánto: `explainMismatch` lo usa para elegir un mensaje hablado.
  */
-export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]): number {
+export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: Stroke[]): ShapeScoreDetail {
   const candidate = prepareCloud(candidateStrokes);
   const templateTagged = normalize(resamplePointCloud(templateStrokes, RESAMPLE_POINTS));
   const template = templateTagged.map(({ x, y }) => ({ x, y }));
@@ -272,9 +282,50 @@ export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]
   const strokeCountPenalty =
     strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : strokeRatio <= 2 ? 1 : Math.max(0.7, 2 / strokeRatio);
 
+  const score = Math.round(base * Math.min(coveragePenalty, strokeCountPenalty));
+
   console.debug(
-    `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${Math.round(base * Math.min(coveragePenalty, strokeCountPenalty))}`
+    `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${score}`
   );
 
-  return Math.round(base * Math.min(coveragePenalty, strokeCountPenalty));
+  return { score, base, coveragePenalty, strokeRatio, strokeCountPenalty };
+}
+
+/** Solo el puntaje 0-100 (ver `shapeScoreDetailed` para el desglose). */
+export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]): number {
+  return shapeScoreDetailed(candidateStrokes, templateStrokes).score;
+}
+
+const MISMATCH_SHAPE_PHRASES = [
+  "Esa forma no es la de esta letra, fijate bien en el modelo.",
+  "Mirá con atención cómo es la letra y probá de nuevo.",
+];
+const MISMATCH_MISSING_STROKE_PHRASES = [
+  "Te faltó una parte de la letra, revisá que esté completa.",
+  "Falta completar un trazo, fijate en el modelo.",
+];
+const MISMATCH_EXTRA_STROKE_PHRASES = [
+  "Tiene trazos de más, fijate que sea la letra correcta.",
+  "Parece que dibujaste otra letra, mirá el modelo de nuevo.",
+];
+const MISMATCH_GENERIC_PHRASES = ["Casi! Probá de nuevo prestando atención a la forma.", "Muy cerca, intentá una vez más."];
+
+function pick(phrases: string[]): string {
+  return phrases[Math.floor(Math.random() * phrases.length)];
+}
+
+/**
+ * Explicación hablada de por qué un intento no llegó al puntaje mínimo, a partir del
+ * desglose de `shapeScoreDetailed`. La forma ($P) manda: si la forma general ya no se
+ * parece a la letra (base bajo), no importa si la cobertura o los trazos están bien —
+ * probablemente sea otra letra. Si la forma sí se parece, se explica cuál penalización
+ * (cobertura o cantidad de trazos) fue la que bajó el puntaje.
+ */
+export function explainMismatch(detail: ShapeScoreDetail): string {
+  if (detail.base < 45) return pick(MISMATCH_SHAPE_PHRASES);
+  if (detail.strokeCountPenalty <= detail.coveragePenalty) {
+    return pick(detail.strokeRatio < 1 ? MISMATCH_MISSING_STROKE_PHRASES : MISMATCH_EXTRA_STROKE_PHRASES);
+  }
+  if (detail.coveragePenalty < 1) return pick(MISMATCH_MISSING_STROKE_PHRASES);
+  return pick(MISMATCH_GENERIC_PHRASES);
 }
