@@ -261,13 +261,16 @@ export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]
   // no solo el de menos: una letra de varios trazos (la "E", con 4) dibujada encima
   // de una plantilla de un solo trazo (la "S") no tenía freno acá, y como $P por sí
   // solo no distingue bien formas distintas con extensión pareja, el puntaje base ya
-  // salía cerca de la mitad — suficiente para aprobar en el nivel inicial. El piso
-  // para exceso de trazos es más alto (0.7, no 0.5) porque un trazo de más suele ser
-  // un simple levantón de lápiz a mitad de una letra bien dibujada (ej: la "S" en dos
-  // trazos en vez de uno continuo), no necesariamente una letra distinta.
+  // salía cerca de la mitad — suficiente para aprobar en el nivel inicial.
+  // Hasta el doble de trazos que la plantilla NO se penaliza: es el rango normal de
+  // levantar el lápiz a mitad de una letra de un solo trazo (ej. la "u", pata
+  // izquierda-levantar-pata derecha) y penalizarlo hacía fallar letras bien
+  // dibujadas. Recién pasado el doble empieza el freno, con piso 0.7 (no 0.5) porque
+  // incluso ahí puede tratarse de una letra bien dibujada con varios levantones, no
+  // necesariamente una letra distinta.
   const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateStrokes.length);
   const strokeCountPenalty =
-    strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : Math.max(0.7, 1 / strokeRatio);
+    strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : strokeRatio <= 2 ? 1 : Math.max(0.7, 2 / strokeRatio);
 
   console.debug(
     `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${Math.round(base * Math.min(coveragePenalty, strokeCountPenalty))}`
