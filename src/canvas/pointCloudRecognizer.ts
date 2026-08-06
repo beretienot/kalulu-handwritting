@@ -42,6 +42,12 @@ const MAX_EXPECTED_DISTANCE = 13;
 const STROKE_COVERAGE_TOLERANCE = 12;
 const STROKE_COVERAGE_TARGET = 0.5;
 
+// Un trazo cuenta como "dominante" (define escala/posición, y se le exige cobertura
+// estricta) si su longitud es al menos esta fracción de la del trazo más largo. Los
+// trazos chicos — la tildecita de "á/é/í/ó/ú" (ver ACCENT_TICK en letterShapes.ts), el
+// puntito de la "i" — quedan afuera.
+const MIN_STROKE_LENGTH_RATIO = 0.15;
+
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -139,30 +145,70 @@ function boundingBox(points: Point[]) {
 }
 
 /**
- * Escala PRESERVANDO la proporción (el lado más largo llega a SQUARE_SIZE) y centra
- * en el origen. Escalar cada eje por separado (como hace $P "de libro") rompe letras
- * casi rectas como la "I": su ancho real es casi cero, así que cualquier temblor
- * mínimo de la mano se estira hasta ocupar todo el ancho normalizado y la deforma por
- * completo. Con escala uniforme ese temblor sigue siendo minúsculo después de normalizar.
+ * Trazos (ya sin los vacíos) cuya longitud llega al menos a `MIN_STROKE_LENGTH_RATIO`
+ * de la del trazo más largo — ver esa constante. Si por alguna razón ninguno califica
+ * (no debería pasar: el propio más largo siempre llega al 100%), caen todos.
  */
-function normalize<T extends Point>(points: T[]): T[] {
-  const box = boundingBox(points);
+function dominantStrokeIndices(strokes: Stroke[]): Set<number> {
+  const lengths = strokes.map(pathLength);
+  const maxLength = Math.max(0, ...lengths);
+  if (maxLength === 0) return new Set(strokes.map((_, i) => i));
+  const dominant = strokes.map((_, i) => i).filter((i) => lengths[i] >= maxLength * MIN_STROKE_LENGTH_RATIO);
+  return dominant.length > 0 ? new Set(dominant) : new Set(strokes.map((_, i) => i));
+}
+
+interface NormalizationParams {
+  minX: number;
+  minY: number;
+  span: number;
+  cx: number;
+  cy: number;
+}
+
+/**
+ * Calcula escala (PRESERVANDO la proporción: el lado más largo llega a SQUARE_SIZE —
+ * escalar cada eje por separado, como hace $P "de libro", rompe letras casi rectas
+ * como la "I") y centrado a partir de `referencePoints`, no de toda la nube.
+ *
+ * Un trazo chico y lejos del cuerpo principal (la tildecita de un vocal acentuada, ej.
+ * "á") tiene poca tinta pero mucho peso sobre el bounding box: al estar por encima de
+ * toda la letra, estira la caja hacia arriba y el cuerpo de la letra —que sí importa—
+ * termina ocupando una fracción menor del cuadrado normalizado de lo que debería. Un
+ * chico dibujando la tilde apenas distinto en tamaño o posición que la plantilla (algo
+ * esperable: no hay línea guía para la tildecita) bastaba para correr esa caja y bajar
+ * el puntaje de la letra ENTERA, tilde incluida, aunque el cuerpo saliera perfecto. Por
+ * eso solo los trazos "dominantes" (ver `dominantStrokeIndices`) definen escala y
+ * posición; los demás se transforman igual pero no participan del cálculo.
+ */
+function computeNormalizationParams(referencePoints: Point[]): NormalizationParams {
+  const box = boundingBox(referencePoints);
   const width = box.maxX - box.minX;
   const height = box.maxY - box.minY;
   const span = Math.max(width, height) || 1e-9;
-  const scaled = points.map((p) => ({
-    ...p,
+  const scaledRef = referencePoints.map((p) => ({
     x: ((p.x - box.minX) / span) * SQUARE_SIZE,
     y: ((p.y - box.minY) / span) * SQUARE_SIZE,
   }));
-  const cx = scaled.reduce((s, p) => s + p.x, 0) / scaled.length;
-  const cy = scaled.reduce((s, p) => s + p.y, 0) / scaled.length;
-  return scaled.map((p) => ({ ...p, x: p.x - cx, y: p.y - cy }));
+  const cx = scaledRef.reduce((s, p) => s + p.x, 0) / scaledRef.length;
+  const cy = scaledRef.reduce((s, p) => s + p.y, 0) / scaledRef.length;
+  return { minX: box.minX, minY: box.minY, span, cx, cy };
+}
+
+function applyNormalization<T extends Point>(points: T[], params: NormalizationParams): T[] {
+  return points.map((p) => ({
+    ...p,
+    x: ((p.x - params.minX) / params.span) * SQUARE_SIZE - params.cx,
+    y: ((p.y - params.minY) / params.span) * SQUARE_SIZE - params.cy,
+  }));
 }
 
 /** Nube de puntos ya remuestreada y normalizada, lista para comparar con `cloudDistanceScore`. */
 export function prepareCloud(strokes: Stroke[]): Point[] {
-  return normalize(resamplePointCloud(strokes, RESAMPLE_POINTS));
+  const filtered = strokes.filter((s) => s.length > 0);
+  const dominant = dominantStrokeIndices(filtered);
+  const referencePoints = filtered.filter((_, i) => dominant.has(i)).flat();
+  const params = computeNormalizationParams(referencePoints.length > 0 ? referencePoints : filtered.flat());
+  return applyNormalization(resamplePointCloud(strokes, RESAMPLE_POINTS), params);
 }
 
 function cloudDistance(pts1: Point[], pts2: Point[], start: number): number {
@@ -222,11 +268,18 @@ export function cloudDistanceScore(candidate: Point[], template: Point[]): numbe
  * tiene menos tinta cerca en el candidato). 1 = todos los trazos tienen tinta cerca
  * en todo su recorrido; 0 = algún trazo entero no tiene ninguna tinta cerca (falta
  * por completo), sin importar qué tan bien haya salido el resto de la letra.
+ *
+ * Solo se exige esto a los trazos "dominantes" (`dominantStrokes`, mismos índices que
+ * `dominantStrokeIndices`): un trazo chico como la tildecita no tiene línea guía propia
+ * y su posición/tamaño exactos varían mucho de chico a chico, así que exigirle la misma
+ * cobertura estricta que al cuerpo de la letra lo condenaba a fallar por poco que se
+ * corriera — su presencia ya se controla, más laxo, con `strokeCountPenalty`.
  */
-function minStrokeCoverage(candidate: Point[], template: TaggedPoint[]): number {
+function minStrokeCoverage(candidate: Point[], template: TaggedPoint[], dominantStrokes: Set<number>): number {
   const strokeCount = Math.max(0, ...template.map((p) => p.strokeIndex)) + 1;
   let worst = 1;
   for (let s = 0; s < strokeCount; s++) {
+    if (!dominantStrokes.has(s)) continue;
     const strokePoints = template.filter((p) => p.strokeIndex === s);
     if (strokePoints.length === 0) continue;
     const covered = strokePoints.filter((tp) => candidate.some((cp) => distance(tp, cp) <= STROKE_COVERAGE_TOLERANCE)).length;
@@ -252,11 +305,18 @@ export interface ShapeScoreDetail {
  */
 export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: Stroke[]): ShapeScoreDetail {
   const candidate = prepareCloud(candidateStrokes);
-  const templateTagged = normalize(resamplePointCloud(templateStrokes, RESAMPLE_POINTS));
+
+  const templateFiltered = templateStrokes.filter((s) => s.length > 0);
+  const templateDominant = dominantStrokeIndices(templateFiltered);
+  const templateReference = templateFiltered.filter((_, i) => templateDominant.has(i)).flat();
+  const templateParams = computeNormalizationParams(
+    templateReference.length > 0 ? templateReference : templateFiltered.flat()
+  );
+  const templateTagged = applyNormalization(resamplePointCloud(templateStrokes, RESAMPLE_POINTS), templateParams);
   const template = templateTagged.map(({ x, y }) => ({ x, y }));
 
   const base = cloudDistanceScore(candidate, template);
-  const coverage = minStrokeCoverage(candidate, templateTagged);
+  const coverage = minStrokeCoverage(candidate, templateTagged, templateDominant);
   const coveragePenalty = Math.min(1, coverage / STROKE_COVERAGE_TARGET);
 
   // Respaldo estructural: cuando falta un trazo chico y aislado (el puntito de la

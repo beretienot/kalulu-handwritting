@@ -13,7 +13,22 @@ interface WritingPageProps {
   onFinish: () => void;
 }
 
+const IS_MOBILE = typeof window !== "undefined" &&
+  window.matchMedia("(pointer: coarse) and (max-width: 480px)").matches;
+
 export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
+  useEffect(() => {
+    if (!IS_MOBILE) return;
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    return () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, []);
+
   const items = [
     ...unit.escritura.trazos.map((text) => ({
       text,
