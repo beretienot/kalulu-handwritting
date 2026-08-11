@@ -9,7 +9,7 @@ import {
   ensureFontsLoaded,
 } from "./tracingScore";
 import { explainMismatch, shapeScoreDetailed, type Point, type Stroke } from "./pointCloudRecognizer";
-import { buildLetterTemplates, buildTextTemplate, scoreWordLetters } from "./textTemplate";
+import { buildLetterTemplates, buildTextTemplate, scoreWordLettersDetailed } from "./textTemplate";
 import { playCelebration, playLetterSound, playSound } from "../audio/playSound";
 import { getDifficultySettings } from "../lib/difficulty";
 import "./TracingCanvas.css";
@@ -148,19 +148,19 @@ export function TracingCanvas({
 
   async function handleCheck() {
     if (!hasInkRef.current || strokesRef.current.length === 0) return;
-    // Las palabras se puntúan letra por letra (ver scoreWordLetters): comparar toda la
-    // palabra como una sola nube $P deja pasar letras salteadas o cambiadas por otra
-    // parecida, porque el resto de la palabra "explica" la forma general igual y el
+    // Las palabras se puntúan letra por letra (ver scoreWordLettersDetailed): comparar
+    // toda la palabra como una sola nube $P deja pasar letras salteadas o cambiadas por
+    // otra parecida, porque el resto de la palabra "explica" la forma general igual y el
     // puntaje global apenas baja. Una letra sola no tiene ese problema (no hay otras
     // letras que la disimulen), así que sigue usando la comparación de nube entera.
-    // Solo la letra individual guarda el desglose (`shapeScoreDetailed`, ver
-    // `explainMismatch`): en una palabra no hay forma barata de saber CUÁL letra
-    // falló ni por qué sin repetir el trabajo de `scoreWordLetters`.
     let result: number;
     let mismatchExplanation: string | null = null;
     if (isWord) {
-      result = scoreWordLetters(strokesRef.current, await buildLetterTemplates(target));
-      mismatchExplanation = "Alguna letra no salió bien, fijate en el modelo y probá de nuevo.";
+      const detail = scoreWordLettersDetailed(strokesRef.current, await buildLetterTemplates(target));
+      result = detail.score;
+      mismatchExplanation = detail.worstChar
+        ? `La "${detail.worstChar}" no se reconoció bien, fijate en el modelo y probá de nuevo.`
+        : "Alguna letra no salió bien, fijate en el modelo y probá de nuevo.";
     } else {
       const detail = shapeScoreDetailed(strokesRef.current, await buildTextTemplate(target));
       result = detail.score;

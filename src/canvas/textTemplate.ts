@@ -110,6 +110,12 @@ function assignStrokesToLetters(strokes: Stroke[], letterCount: number): Stroke[
   return groups;
 }
 
+export interface WordScoreDetail {
+  score: number;
+  /** La letra con el puntaje más bajo (la que hizo fallar a la palabra), o null si no hay letras puntuables. */
+  worstChar: string | null;
+}
+
 /**
  * Puntaje 0-100 para una PALABRA, juzgando cada letra por separado contra su propia
  * plantilla — a diferencia de comparar toda la palabra como una sola nube $P (ver
@@ -124,12 +130,18 @@ function assignStrokesToLetters(strokes: Stroke[], letterCount: number): Stroke[
  * tipográfica). Una letra completamente salteada queda con cero trazos asignados →
  * puntaje 0 para esa letra → puntaje final 0.
  */
-export function scoreWordLetters(candidateStrokes: Stroke[], letters: LetterTemplate[]): number {
+export function scoreWordLettersDetailed(candidateStrokes: Stroke[], letters: LetterTemplate[]): WordScoreDetail {
   const scorable = letters.filter((l) => l.strokes.length > 0);
-  if (scorable.length === 0) return 0;
+  if (scorable.length === 0) return { score: 0, worstChar: null };
 
   const strokesByLetter = assignStrokesToLetters(candidateStrokes, scorable.length);
 
   const perLetterScores = scorable.map((letter, i) => shapeScore(strokesByLetter[i], letter.strokes));
-  return Math.min(...perLetterScores);
+  const worstIndex = perLetterScores.indexOf(Math.min(...perLetterScores));
+  return { score: perLetterScores[worstIndex], worstChar: scorable[worstIndex].char };
+}
+
+/** Solo el puntaje 0-100 (ver `scoreWordLettersDetailed` para saber qué letra falló). */
+export function scoreWordLetters(candidateStrokes: Stroke[], letters: LetterTemplate[]): number {
+  return scoreWordLettersDetailed(candidateStrokes, letters).score;
 }

@@ -42,6 +42,14 @@ const MAX_EXPECTED_DISTANCE = 13;
 const STROKE_COVERAGE_TOLERANCE = 12;
 const STROKE_COVERAGE_TARGET = 0.5;
 
+// Misma idea que arriba pero para trazos chicos no dominantes (la tildecita de
+// "á/é/í/ó/ú", el puntito de la "i"): no tienen línea guía propia, así que la
+// posición/tamaño exactos varían mucho de chico a chico. Tolerancia más amplia y
+// target más bajo — alcanza con que HAYA tinta cerca en algún punto, no que lo
+// cubra casi entero como al cuerpo de la letra.
+const MINOR_STROKE_COVERAGE_TOLERANCE = 22;
+const MINOR_STROKE_COVERAGE_TARGET = 0.25;
+
 // Un trazo cuenta como "dominante" (define escala/posición, y se le exige cobertura
 // estricta) si su longitud es al menos esta fracción de la del trazo más largo. Los
 // trazos chicos — la tildecita de "á/é/í/ó/ú" (ver ACCENT_TICK en letterShapes.ts), el
@@ -264,27 +272,36 @@ export function cloudDistanceScore(candidate: Point[], template: Point[]): numbe
 }
 
 /**
- * De 0 a 1: qué tan cubierto está el trazo peor cubierto de la plantilla (el que
- * tiene menos tinta cerca en el candidato). 1 = todos los trazos tienen tinta cerca
- * en todo su recorrido; 0 = algún trazo entero no tiene ninguna tinta cerca (falta
- * por completo), sin importar qué tan bien haya salido el resto de la letra.
+ * De 0 a 1: penalización por el trazo peor cubierto de la plantilla (el que tiene
+ * menos tinta cerca en el candidato, ya normalizado 0-1 por su propio target). 1 =
+ * todos los trazos llegan a su target de cobertura; 0 = algún trazo entero no tiene
+ * ninguna tinta cerca (falta por completo), sin importar qué tan bien haya salido el
+ * resto de la letra.
  *
- * Solo se exige esto a los trazos "dominantes" (`dominantStrokes`, mismos índices que
- * `dominantStrokeIndices`): un trazo chico como la tildecita no tiene línea guía propia
- * y su posición/tamaño exactos varían mucho de chico a chico, así que exigirle la misma
- * cobertura estricta que al cuerpo de la letra lo condenaba a fallar por poco que se
- * corriera — su presencia ya se controla, más laxo, con `strokeCountPenalty`.
+ * Los trazos "dominantes" (`dominantStrokes`, mismos índices que
+ * `dominantStrokeIndices`) usan tolerancia/target estrictos (`STROKE_COVERAGE_*`); los
+ * chicos (la tildecita, el puntito de la "i") usan una versión más laxa
+ * (`MINOR_STROKE_COVERAGE_*`): no tienen línea guía propia y su posición/tamaño
+ * exactos varían mucho de chico a chico, así que exigirles la misma cobertura
+ * estricta que al cuerpo de la letra los condenaba a fallar por poco que se
+ * corrieran. Aun así se los chequea (antes se los excluía del todo y su presencia
+ * quedaba solo en manos de `strokeCountPenalty`, que los trataba como un trazo
+ * obligatorio más — bastaba con no levantar el lápiz una vez de más entre el cuerpo
+ * de la letra y la tilde, algo muy común al escribir a mano, para tapar el puntaje
+ * muy por debajo del mínimo sin importar qué tan bien hubiera salido la tilde).
  */
 function minStrokeCoverage(candidate: Point[], template: TaggedPoint[], dominantStrokes: Set<number>): number {
   const strokeCount = Math.max(0, ...template.map((p) => p.strokeIndex)) + 1;
   let worst = 1;
   for (let s = 0; s < strokeCount; s++) {
-    if (!dominantStrokes.has(s)) continue;
     const strokePoints = template.filter((p) => p.strokeIndex === s);
     if (strokePoints.length === 0) continue;
-    const covered = strokePoints.filter((tp) => candidate.some((cp) => distance(tp, cp) <= STROKE_COVERAGE_TOLERANCE)).length;
-    const coverage = covered / strokePoints.length;
-    if (coverage < worst) worst = coverage;
+    const isDominant = dominantStrokes.has(s);
+    const tolerance = isDominant ? STROKE_COVERAGE_TOLERANCE : MINOR_STROKE_COVERAGE_TOLERANCE;
+    const target = isDominant ? STROKE_COVERAGE_TARGET : MINOR_STROKE_COVERAGE_TARGET;
+    const covered = strokePoints.filter((tp) => candidate.some((cp) => distance(tp, cp) <= tolerance)).length;
+    const penalty = Math.min(1, covered / strokePoints.length / target);
+    if (penalty < worst) worst = penalty;
   }
   return worst;
 }
@@ -316,14 +333,13 @@ export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: 
   const template = templateTagged.map(({ x, y }) => ({ x, y }));
 
   const base = cloudDistanceScore(candidate, template);
-  const coverage = minStrokeCoverage(candidate, templateTagged, templateDominant);
-  const coveragePenalty = Math.min(1, coverage / STROKE_COVERAGE_TARGET);
+  const coveragePenalty = minStrokeCoverage(candidate, templateTagged, templateDominant);
 
-  // Respaldo estructural: cuando falta un trazo chico y aislado (el puntito de la
-  // "i", por ejemplo), el trazo que sí quedó se estira al normalizar y por pura
-  // coincidencia geométrica puede terminar "cerca" de donde iba el trazo faltante,
-  // burlando la cobertura de arriba. Contar los trazos (levantar el lápiz) es una
-  // señal más tosca pero más confiable de "faltó algo completo".
+  // Respaldo estructural: cuando falta un trazo grande y aislado, el trazo que sí
+  // quedó se estira al normalizar y por pura coincidencia geométrica puede terminar
+  // "cerca" de donde iba el trazo faltante, burlando la cobertura de arriba. Contar
+  // los trazos (levantar el lápiz) es una señal más tosca pero más confiable de
+  // "faltó algo completo".
   // El piso se sube de 0.35 a 0.5: penalizar menos a quien dibuja bien la forma
   // pero con menos trazos que la plantilla (ej: "A" de un solo trazo continuo).
   //
@@ -338,14 +354,21 @@ export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: 
   // dibujadas. Recién pasado el doble empieza el freno, con piso 0.7 (no 0.5) porque
   // incluso ahí puede tratarse de una letra bien dibujada con varios levantones, no
   // necesariamente una letra distinta.
-  const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateStrokes.length);
+  //
+  // El denominador cuenta solo los trazos DOMINANTES de la plantilla (no la
+  // tildecita ni el puntito de la "i"): esos trazos chicos ya se verifican, más
+  // laxo, con `coveragePenalty` de arriba, así que no deben sumar como un levantón
+  // más exigido — de lo contrario "á" (cuerpo de la "a" en un solo trazo + una
+  // tilde aparte = 2 levantones) queda comparada contra 3 trazos esperados (cuerpo
+  // en 2 + tilde) y tapada en ~67 sin importar qué tan bien esté escrita.
+  const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateDominant.size);
   const strokeCountPenalty =
     strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : strokeRatio <= 2 ? 1 : Math.max(0.7, 2 / strokeRatio);
 
   const score = Math.round(base * Math.min(coveragePenalty, strokeCountPenalty));
 
   console.debug(
-    `[shapeScore] base=${base} coverage=${coverage.toFixed(2)} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${score}`
+    `[shapeScore] base=${base} coveragePenalty=${coveragePenalty.toFixed(2)} strokeRatio=${strokeRatio.toFixed(2)} strokeCountPenalty=${strokeCountPenalty.toFixed(2)} → ${score}`
   );
 
   return { score, base, coveragePenalty, strokeRatio, strokeCountPenalty };
