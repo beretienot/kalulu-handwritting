@@ -123,3 +123,28 @@
     opacity: 0;
   }
 }
+
+/* En celulares el canvas ocupa toda la pantalla para facilitar el trazado con el dedo */
+@media (pointer: coarse) and (max-width: 480px) {
+  .tracing-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #fff;
+    gap: 0;
+  }
+
+  .tracing-canvas__stack {
+    /* !important necesario para sobrescribir los mm inline del componente */
+    width: 100% !important;
+    height: 0 !important;
+    flex: 1;
+    border-radius: 0;
+  }
+
+  .tracing-canvas__controls {
+    padding: 1rem 1.5rem;
+    background: #f0f4f8;
+    border-top: 1px solid #e0e5f0;
+  }
+}
