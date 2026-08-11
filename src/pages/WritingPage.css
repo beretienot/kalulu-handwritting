@@ -49,11 +49,13 @@
   padding: 0.3rem 0.5rem;
   border-radius: 8px;
   text-align: center;
+  font: inherit;
   font-size: 1.1rem;
   font-weight: 600;
   color: #1d3557;
   background: #e7ecf5;
   border: 2px solid transparent;
+  cursor: pointer;
 }
 
 .writing-stepper__item--active {
@@ -64,11 +66,8 @@
 
 .writing-stepper__item--done {
   background: #2a9d8f;
+  border-color: #2a9d8f;
   color: #fff;
-}
-
-.writing-stepper__item--locked {
-  opacity: 0.5;
 }
 
 .writing-row {

@@ -34,6 +34,11 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
   // resto se ve pero no se puede tocar hasta que le toque el turno.
   const [passed, setPassed] = useState<boolean[][]>(() => items.map(() => Array(REQUIRED_REPETITIONS).fill(false)));
   const [celebrating, setCelebrating] = useState(false);
+  // Ítem elegido a mano tocando su botón en el stepper (ver más abajo): permite
+  // practicar cualquier letra/palabra de la hoja fuera de orden (ej. volver a "m" para
+  // repetirla más veces), en vez de forzar siempre el siguiente ítem sin completar.
+  // Se mantiene hasta que se toca otro botón — no vuelve solo al modo automático.
+  const [manualItemIndex, setManualItemIndex] = useState<number | null>(null);
 
   const flatPassed = passed.flat();
   const nextFlatIndex = flatPassed.findIndex((done) => !done);
@@ -42,8 +47,13 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
   // cada repetición mostrado a la vez: eso obligaba a hacer scroll para ver la hoja
   // completa. Las demás repeticiones de cada letra/palabra se validan reusando ese
   // mismo canvas (se reinicia entre intento e intento), no viendo varios a la vez.
-  const activeItemIndex = Math.min(Math.floor(unlockedFlatIndex / REQUIRED_REPETITIONS), items.length - 1);
-  const currentRepIndex = unlockedFlatIndex % REQUIRED_REPETITIONS;
+  const autoItemIndex = Math.min(Math.floor(unlockedFlatIndex / REQUIRED_REPETITIONS), items.length - 1);
+  const activeItemIndex = manualItemIndex ?? autoItemIndex;
+  // Primera repetición sin aprobar del ítem activo (mismo cálculo tanto para el modo
+  // automático como para el manual); si ya están todas aprobadas (se volvió a elegir
+  // un ítem ya completo para repasarlo), se arranca de nuevo desde la primera.
+  const firstIncompleteRep = passed[activeItemIndex].findIndex((done) => !done);
+  const currentRepIndex = firstIncompleteRep === -1 ? 0 : firstIncompleteRep;
 
   useEffect(() => {
     playSound("Primero calcá la letra con el lápiz. Después escribila de memoria.");
@@ -97,11 +107,16 @@ export function WritingPage({ unit, onBack, onFinish }: WritingPageProps) {
         {items.map((item, i) => {
           const isDone = passed[i].every(Boolean);
           const isActive = i === activeItemIndex && !isDone;
-          const status = isDone ? "done" : isActive ? "active" : "locked";
+          const status = isDone ? "done" : isActive ? "active" : "pending";
           return (
-            <span className={`writing-stepper__item writing-stepper__item--${status}`} key={i}>
-              {isDone ? "✓" : item.text}
-            </span>
+            <button
+              type="button"
+              className={`writing-stepper__item writing-stepper__item--${status}`}
+              key={i}
+              onClick={() => setManualItemIndex(i)}
+            >
+              {item.text}
+            </button>
           );
         })}
       </div>
