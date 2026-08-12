@@ -44,11 +44,18 @@ const STROKE_COVERAGE_TARGET = 0.5;
 
 // Misma idea que arriba pero para trazos chicos no dominantes (la tildecita de
 // "á/é/í/ó/ú", el puntito de la "i"): no tienen línea guía propia, así que la
-// posición/tamaño exactos varían mucho de chico a chico. Tolerancia más amplia y
-// target más bajo — alcanza con que HAYA tinta cerca en algún punto, no que lo
-// cubra casi entero como al cuerpo de la letra.
-const MINOR_STROKE_COVERAGE_TOLERANCE = 22;
-const MINOR_STROKE_COVERAGE_TARGET = 0.25;
+// posición/tamaño exactos varían mucho de chico a chico y conviene un target más
+// bajo (con la mitad de sus puntos cerca alcanza, no hace falta cubrirlo casi
+// entero). La tolerancia, en cambio, NO puede ser más ancha que la de los trazos
+// dominantes: son trazos chicos (2-3 puntos tras remuestrear) muy cerca del cuerpo
+// de la letra, así que una tolerancia floja hace que el borde superior del cuerpo
+// mismo "cubra" a la tilde por pura cercanía aunque no se haya dibujado ninguna —
+// probado empíricamente: con tolerancia 22 una "a" sin tilde pasaba igual como "á".
+// 14 es el punto justo por debajo de esa distancia "gratis" (~16, medida entre la
+// tilde de la plantilla y el cuerpo solo) que sigue tolerando una tilde real pero
+// chica/corrida.
+const MINOR_STROKE_COVERAGE_TOLERANCE = 14;
+const MINOR_STROKE_COVERAGE_TARGET = 0.5;
 
 // Un trazo cuenta como "dominante" (define escala/posición, y se le exige cobertura
 // estricta) si su longitud es al menos esta fracción de la del trazo más largo. Los
