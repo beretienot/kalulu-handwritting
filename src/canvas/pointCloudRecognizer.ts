@@ -326,11 +326,31 @@ export interface ShapeScoreDetail {
  * plantilla le falta tinta cerca (letra incompleta), aunque el resto haya salido bien.
  * Devuelve además el desglose (ver `ShapeScoreDetail`) para poder explicar qué anduvo
  * mal, no solo cuánto: `explainMismatch` lo usa para elegir un mensaje hablado.
+ *
+ * `templateMinorAccentIndex`: índice (en `templateStrokes`, sin filtrar) del trazo de
+ * la tildecita, si `target` es una vocal acentuada — ver `isAccentedChar` en
+ * letterShapes.ts. IMPORTANTE: esto NO se usa para decidir qué trazos son
+ * "dominantes" a los fines de normalizar (escala/posición) ni de cobertura — eso
+ * sigue siendo heurístico (`dominantStrokeIndices`, por longitud relativa) y tiene
+ * que quedar así porque del lado del candidato (lo que dibujó el chico) no hay forma
+ * de saber de antemano cuál trazo es la tilde, así que ese lado SIEMPRE usa la
+ * heurística; si la plantilla usara un criterio distinto (el explícito) para lo
+ * mismo, candidato y plantilla normalizarían con referencias distintas y la
+ * comparación se rompe (esto pasaba en "Á": la heurística sí incluye su tilde como
+ * dominante — a diferencia de "á" — porque los trazos rectos y cortos de la "A"
+ * hacen que la tilde sea, en proporción, más grande que en la "a" con su óvalo).
+ * El índice explícito se usa SOLO para el denominador de `strokeCountPenalty` más
+ * abajo, que es un conteo de levantones y no depende de la normalización.
  */
-export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: Stroke[]): ShapeScoreDetail {
+export function shapeScoreDetailed(
+  candidateStrokes: Stroke[],
+  templateStrokes: Stroke[],
+  templateMinorAccentIndex?: number
+): ShapeScoreDetail {
   const candidate = prepareCloud(candidateStrokes);
 
-  const templateFiltered = templateStrokes.filter((s) => s.length > 0);
+  const nonEmptyIndices = templateStrokes.map((_, i) => i).filter((i) => templateStrokes[i].length > 0);
+  const templateFiltered = nonEmptyIndices.map((i) => templateStrokes[i]);
   const templateDominant = dominantStrokeIndices(templateFiltered);
   const templateReference = templateFiltered.filter((_, i) => templateDominant.has(i)).flat();
   const templateParams = computeNormalizationParams(
@@ -368,9 +388,29 @@ export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: 
   // más exigido — de lo contrario "á" (cuerpo de la "a" en un solo trazo + una
   // tilde aparte = 2 levantones) queda comparada contra 3 trazos esperados (cuerpo
   // en 2 + tilde) y tapada en ~67 sin importar qué tan bien esté escrita.
-  const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, templateDominant.size);
+  //
+  // El piso de la rama "menos trazos que la plantilla" no es fijo: si `coveragePenalty`
+  // ya salió alto, quiere decir que TODA la plantilla tiene tinta cerca — no falta
+  // nada, el chico simplemente levantó el lápiz menos veces de las que asume la
+  // plantilla (ej. "M" en 2 trazos en vez de los 4 con los que está modelada: bajada
+  // izquierda+diagonal en un solo gesto, diagonal+bajada derecha en otro). Es
+  // exactamente el caso que la cobertura (más precisa) puede confirmar como completo
+  // y que el conteo de trazos (más tosco, pensado para cuando la cobertura SÍ puede
+  // estar siendo engañada por el estiramiento de la normalización) no tiene por qué
+  // seguir castigando con el mismo piso que cuando no se sabe si falta algo.
+  // Denominador del conteo de levantones: los trazos dominantes de la plantilla,
+  // pero restando la tilde explícita si la heurística la hubiera incluido (ver
+  // comentario del parámetro `templateMinorAccentIndex` más arriba) — así "Á" (3
+  // trazos de cuerpo + tilde) exige 3 levantones, no 4, sin afectar en nada la
+  // normalización/cobertura de arriba, que sigue viendo la tilde como dominante.
+  const strokeCountDominantSize =
+    templateMinorAccentIndex === undefined || !templateDominant.has(nonEmptyIndices.indexOf(templateMinorAccentIndex))
+      ? templateDominant.size
+      : templateDominant.size - 1;
+  const strokeRatio = candidateStrokes.filter((s) => s.length > 0).length / Math.max(1, strokeCountDominantSize);
+  const fewerStrokesFloor = coveragePenalty >= 0.9 ? 0.85 : 0.5;
   const strokeCountPenalty =
-    strokeRatio <= 1 ? Math.max(0.5, strokeRatio) : strokeRatio <= 2 ? 1 : Math.max(0.7, 2 / strokeRatio);
+    strokeRatio <= 1 ? Math.max(fewerStrokesFloor, strokeRatio) : strokeRatio <= 2 ? 1 : Math.max(0.7, 2 / strokeRatio);
 
   const score = Math.round(base * Math.min(coveragePenalty, strokeCountPenalty));
 
@@ -382,8 +422,8 @@ export function shapeScoreDetailed(candidateStrokes: Stroke[], templateStrokes: 
 }
 
 /** Solo el puntaje 0-100 (ver `shapeScoreDetailed` para el desglose). */
-export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[]): number {
-  return shapeScoreDetailed(candidateStrokes, templateStrokes).score;
+export function shapeScore(candidateStrokes: Stroke[], templateStrokes: Stroke[], templateMinorAccentIndex?: number): number {
+  return shapeScoreDetailed(candidateStrokes, templateStrokes, templateMinorAccentIndex).score;
 }
 
 const MISMATCH_SHAPE_PHRASES = [

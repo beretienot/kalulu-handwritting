@@ -251,6 +251,22 @@ export function getLetterShape(char: string): Stroke[] | null {
 }
 
 /**
+ * true si `char` es una vocal acentuada, es decir si su forma (ver `getLetterShape`)
+ * termina con la tilde como último trazo. Sirve para decirle al reconocedor CUÁL
+ * trazo es la tilde en vez de que lo adivine por longitud relativa (ver
+ * `dominantStrokeIndices` en pointCloudRecognizer.ts): esa heurística depende de
+ * cuánto recorrido tienen los OTROS trazos de la letra, y eso varía mucho letra a
+ * letra — en la "a" (con su óvalo, trazo largo) la tilde queda chica en
+ * comparación y se excluye bien sola, pero en la "A" (tres trazos rectos y cortos)
+ * la tilde termina siendo relativamente larga y la heurística la cuenta como un
+ * trazo más del cuerpo, no como la tildecita — capando el puntaje igual que antes
+ * de arreglar esto, pero solo para las mayúsculas acentuadas.
+ */
+export function isAccentedChar(char: string): boolean {
+  return char in ACCENT_TO_BASE;
+}
+
+/**
  * Para medir la altura real de la letra base (sin la tilde) al armar la plantilla:
  * medir "Í" da la altura CON la tilde ya incluida, así que si se usa esa altura para
  * ubicar tanto el asta como la tildecita, el asta queda estirada de más y la tilde

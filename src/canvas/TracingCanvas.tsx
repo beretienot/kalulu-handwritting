@@ -162,14 +162,19 @@ export function TracingCanvas({
         ? `La "${detail.worstChar}" no se reconoció bien, fijate en el modelo y probá de nuevo.`
         : "Alguna letra no salió bien, fijate en el modelo y probá de nuevo.";
     } else {
-      const detail = shapeScoreDetailed(strokesRef.current, await buildTextTemplate(target));
+      const textTemplate = await buildTextTemplate(target);
+      const detail = shapeScoreDetailed(strokesRef.current, textTemplate.strokes, textTemplate.accentStrokeIndex);
       result = detail.score;
       mismatchExplanation = explainMismatch(detail);
     }
     setScore(result);
 
     if (result < getDifficultySettings().passScore) {
+      // El trazo fallido se borra recién DESPUÉS de la explicación hablada, no antes ni
+      // durante: si se borrara al toque, el chico pierde la referencia de qué dibujó
+      // justo cuando más la necesita (mientras escucha qué salió mal).
       await playSound(mismatchExplanation);
+      clearInk();
       onScored?.(result);
       return;
     }

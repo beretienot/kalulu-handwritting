@@ -1,5 +1,5 @@
 import { shapeScore, type Stroke } from "./pointCloudRecognizer";
-import { getLetterShape, getBaseCharForMeasurement } from "./letterShapes";
+import { getLetterShape, getBaseCharForMeasurement, isAccentedChar } from "./letterShapes";
 import { ensureFontsLoaded, fontString } from "./tracingScore";
 
 let measureCtx: CanvasRenderingContext2D | null = null;
@@ -19,6 +19,8 @@ function mapY(normY: number, ascent: number, descent: number): number {
 export interface LetterTemplate {
   char: string;
   strokes: Stroke[];
+  /** Índice (en `strokes`) del trazo de la tildecita, si `char` es una vocal acentuada — ver `isAccentedChar`. */
+  accentStrokeIndex?: number;
 }
 
 /**
@@ -48,10 +50,20 @@ export async function buildLetterTemplates(text: string): Promise<LetterTemplate
     const strokes = (shape ?? []).map((stroke) =>
       stroke.map((p) => ({ x: cursorX + p.x * width, y: mapY(p.y, ascent, descent) }))
     );
-    letters.push({ char, strokes });
+    // La tilde es siempre el último trazo de `shape` (ver getLetterShape) — se marca su
+    // índice acá, con la letra base ya conocida, en vez de dejar que el reconocedor lo
+    // adivine por longitud relativa de los trazos (ver comentario en shapeScoreDetailed).
+    const accentStrokeIndex = strokes.length > 0 && isAccentedChar(char) ? strokes.length - 1 : undefined;
+    letters.push({ char, strokes, accentStrokeIndex });
     cursorX += width;
   }
   return letters;
+}
+
+export interface TextTemplate {
+  strokes: Stroke[];
+  /** Índice (en `strokes`, ya aplanado) del trazo de la tildecita, si `text` tiene una vocal acentuada. */
+  accentStrokeIndex?: number;
 }
 
 /**
@@ -59,9 +71,15 @@ export async function buildLetterTemplates(text: string): Promise<LetterTemplate
  * pointCloudRecognizer.ts). El resultado se compara vía $P, que normaliza escala y
  * posición, así que no hace falta que coincida con ningún tamaño de canvas en particular.
  */
-export async function buildTextTemplate(text: string): Promise<Stroke[]> {
+export async function buildTextTemplate(text: string): Promise<TextTemplate> {
   const letters = await buildLetterTemplates(text);
-  return letters.flatMap((l) => l.strokes);
+  let cursor = 0;
+  let accentStrokeIndex: number | undefined;
+  for (const letter of letters) {
+    if (letter.accentStrokeIndex !== undefined) accentStrokeIndex = cursor + letter.accentStrokeIndex;
+    cursor += letter.strokes.length;
+  }
+  return { strokes: letters.flatMap((l) => l.strokes), accentStrokeIndex };
 }
 
 function strokeCenterX(stroke: Stroke): number {
@@ -136,7 +154,9 @@ export function scoreWordLettersDetailed(candidateStrokes: Stroke[], letters: Le
 
   const strokesByLetter = assignStrokesToLetters(candidateStrokes, scorable.length);
 
-  const perLetterScores = scorable.map((letter, i) => shapeScore(strokesByLetter[i], letter.strokes));
+  const perLetterScores = scorable.map((letter, i) =>
+    shapeScore(strokesByLetter[i], letter.strokes, letter.accentStrokeIndex)
+  );
   const worstIndex = perLetterScores.indexOf(Math.min(...perLetterScores));
   return { score: perLetterScores[worstIndex], worstChar: scorable[worstIndex].char };
 }
